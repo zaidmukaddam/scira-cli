@@ -1,0 +1,29 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+*.js.map
+
+# environment & secrets — NEVER commit .env
+.env
+.env.local
+.env.*.local
+
+# run data
+.scira/
+.rig/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.agents/
+.claude/
+
+skills-lock.json
