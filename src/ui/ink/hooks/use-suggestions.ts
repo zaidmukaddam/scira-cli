@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, { useCallback, useMemo, useRef } from "react";
 import { CHAT_COMMANDS } from "../constants.js";
 import { listMentionableFiles, activeFileMention } from "../lib/file-mentions.js";
 import { type RunState } from "../../../types/index.js";

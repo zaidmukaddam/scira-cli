@@ -1,6 +1,5 @@
 import React, { useCallback, useRef } from "react";
 import { readFile } from "node:fs/promises";
-import { dirname } from "node:path";
 import { SciraConfig, RunState } from "../../../types/index.js";
 import { createRun, getRunPaths, setRunTitle } from "../../../storage/run-store.js";
 import { readJsonl } from "../../../storage/jsonl.js";
@@ -149,7 +148,7 @@ export function useSubmit(o: SubmitOptions): {
     if (text === "/quit" || text === "/q") { abortTurn(); exit(); return; }
     if (text === "/help") { setHelpOpen(true); return; }
     if (text === "/stop") { stopTurn(); return; }
-    if (text === "/back" || text === "/new") {
+    if (text === "/back" || text === "/new" || text === "/home") {
       if (currentRunPath) detachSubscriber(currentRunPath);
       setScreen("home");
       void refreshSessions();
@@ -158,7 +157,7 @@ export function useSubmit(o: SubmitOptions): {
     if (text === "/model") { void openMenu("model"); return; }
     if (text === "/llm") { void openMenu("llm"); return; }
     if (text === "/provider") { void openMenu("provider"); return; }
-    if (["/key", "/keys", "/llm"].includes(text.split(/\s+/u)[0])) {
+    if (["/key", "/keys", "/llm", "/theme"].includes(text.split(/\s+/u)[0])) {
       void (async () => {
         const result = await handleSettings(text);
         if (result) pushFeed({ kind: "status", text: result });

@@ -13,6 +13,7 @@ import {
   createSession, getSession, removeSession, attachSubscriber,
   sessionPushFeed, sessionSetBusy, sessionSetApproval,
   sessionFinishReasoning, sessionNotifyEscalate, sessionNotifyModeChange,
+  mergeFeedToolResults, getSessionFeedBuffer,
   type SessionSubscriber,
 } from "../session-manager.js";
 
@@ -90,16 +91,31 @@ export function useAgentTurn({
               sessionPushFeed(runPath, { kind: "tool", name: part.toolName, toolCallId: part.toolCallId, summary: summarizeToolInput(part.toolName, part.input), status: "running" });
               break;
             case "tool-result": {
-              const toolResultId = (part as { toolCallId: string }).toolCallId;
-              const resultText = String(part.output).slice(0, 200);
-              sessionPushFeed(runPath, { kind: "tool", name: "", toolCallId: toolResultId, summary: resultText, status: "done", result: resultText });
+              if (part.preliminary) break;
+              const raw = part.output;
+              const resultText = typeof raw === "string" ? raw : JSON.stringify(raw);
+              sessionPushFeed(runPath, {
+                kind: "tool",
+                name: "",
+                toolCallId: part.toolCallId,
+                summary: "",
+                status: "done",
+                result: resultText,
+              });
               void refreshRun();
               break;
             }
             case "tool-error": {
-              const toolErrId = (part as { toolCallId?: string }).toolCallId ?? "";
-              const errText = String((part as { error?: unknown }).error).slice(0, 200);
-              sessionPushFeed(runPath, { kind: "tool", name: "", toolCallId: toolErrId, summary: errText, status: "error", result: errText });
+              const errRaw = (part as { error?: unknown }).error;
+              const errText = errRaw instanceof Error ? errRaw.message : String(errRaw);
+              sessionPushFeed(runPath, {
+                kind: "tool",
+                name: "",
+                toolCallId: part.toolCallId ?? "",
+                summary: errText,
+                status: "error",
+                result: errText,
+              });
               break;
             }
             case "error":
@@ -187,7 +203,8 @@ export function useAgentTurn({
       if (turnUsage.input + turnUsage.output + turnUsage.total > 0) {
         turnsRef.current = [...turnsRef.current, { model: modelId, input: turnUsage.input, output: turnUsage.output, total: turnUsage.total, ts: Date.now() }];
       }
-      const snapshot = feedRef.current
+      const merged = mergeFeedToolResults(feedRef.current, getSessionFeedBuffer(runPath));
+      const snapshot = merged
         .filter((item) => !(item.kind === "status" && item.text === "This will wipe the conversation history. Press /rerun again to confirm."))
         .map((item) =>
           item.kind === "tool" && item.status === "running" ? { ...item, status: "error" as const } : item

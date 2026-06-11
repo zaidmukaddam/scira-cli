@@ -1,11 +1,17 @@
 import React, { useMemo } from "react";
 import { Text } from "ink";
 import { type FeedItem } from "../types.js";
-import { S_BAR, TOOL_ICONS, USER_BAND_BG, SPINNER_FRAMES } from "../constants.js";
+import { type SciraConfig } from "../../../types/index.js";
+import { S_BAR, TOOL_ICONS, SPINNER_FRAMES } from "../constants.js";
 import { formatTime, fmtDuration, wrapText, hyperlink, displayWidth } from "../lib/utils.js";
+import {
+  formatToolResultLines, formatToolResultPreview, feedToolItemId,
+  isCollapsibleToolName, isToolItemCollapsed,
+} from "../lib/tool-result.js";
 import { markdownToSegLines } from "../lib/markdown.js";
+import { useTheme } from "./use-theme.js";
 
-export type GroupInfo = { toolNames: string[]; itemCount: number; active: boolean; end: number };
+export type GroupInfo = { stepLabels: string[]; itemCount: number; active: boolean; end: number };
 
 export function computeGroups(feed: FeedItem[]): { groupOf: number[]; groups: Map<number, GroupInfo> } {
   const groupOf = new Array<number>(feed.length).fill(-1);
@@ -14,16 +20,17 @@ export function computeGroups(feed: FeedItem[]): { groupOf: number[]; groups: Ma
   for (let i = 0; i < feed.length; i++) {
     const k = feed[i].kind;
     if (k === "tool" || k === "reasoning") {
-      if (gs === -1) { gs = i; groups.set(gs, { toolNames: [], itemCount: 0, active: false, end: i }); }
+      if (gs === -1) { gs = i; groups.set(gs, { stepLabels: [], itemCount: 0, active: false, end: i }); }
       const g = groups.get(gs)!;
       g.end = i;
       g.itemCount++;
       groupOf[i] = gs;
       if (k === "tool") {
         const it = feed[i] as Extract<FeedItem, { kind: "tool" }>;
-        if (!g.toolNames.includes(it.name)) g.toolNames.push(it.name);
+        g.stepLabels.push(it.name);
         if (it.status === "running") g.active = true;
       } else {
+        g.stepLabels.push("thinking");
         const it = feed[i] as Extract<FeedItem, { kind: "reasoning" }>;
         if (it.durationMs === undefined) g.active = true;
       }
@@ -35,8 +42,15 @@ export function computeGroups(feed: FeedItem[]): { groupOf: number[]; groups: Ma
 }
 
 type GroupHeader = { _tag: "gh"; info: GroupInfo; key: number; collapsed: boolean; focused: boolean };
-type EffItem = FeedItem | GroupHeader;
-const isGH = (item: EffItem): item is GroupHeader => "_tag" in item;
+type EffFeedItem = { _tag: "fi"; idx: number; item: FeedItem };
+type EffItem = EffFeedItem | GroupHeader;
+const isGH = (item: EffItem): item is GroupHeader => item._tag === "gh";
+
+export type FeedLinesResult = {
+  lines: React.ReactNode[];
+  toggleAtLine: Map<number, string>;
+  groupToggleAtLine: Map<number, number>;
+};
 
 export function useFeedLines(
   feed: FeedItem[],
@@ -46,9 +60,16 @@ export function useFeedLines(
   spinnerFrame: number,
   collapsedGroups: ReadonlySet<number>,
   focusedGroupKey: number | null,
-): React.ReactNode[] {
+  itemExpandState: ReadonlyMap<string, boolean>,
+  hoveredLineIdx: number | null,
+  config: SciraConfig,
+): FeedLinesResult {
+  const theme = useTheme();
   return useMemo(() => {
+    const bandBg = theme.userBandBackground ? { backgroundColor: theme.userBandBackground } : {};
     const lines: React.ReactNode[] = [];
+    const toggleAtLine = new Map<number, string>();
+    const groupToggleAtLine = new Map<number, number>();
     let key = 0;
     const { groupOf, groups } = computeGroups(feed);
 
@@ -60,17 +81,17 @@ export function useFeedLines(
         const collapsed = !info.active && collapsedGroups.has(gs);
         if (gs === i) {
           eff.push({ _tag: "gh", info, key: gs, collapsed, focused: focusedGroupKey === gs });
-          if (!collapsed) eff.push(feed[i]);
+          if (!collapsed) eff.push({ _tag: "fi", idx: i, item: feed[i] });
         } else if (!collapsed) {
-          eff.push(feed[i]);
+          eff.push({ _tag: "fi", idx: i, item: feed[i] });
         }
       } else {
-        eff.push(feed[i]);
+        eff.push({ _tag: "fi", idx: i, item: feed[i] });
       }
     }
 
     eff.forEach((item, ei) => {
-      const currKind = isGH(item) ? "gh" : (item as FeedItem).kind;
+      const currKind = isGH(item) ? "gh" : item.item.kind;
       if (ei === 0 && currKind === "user") {
         lines.push(<Text key={key++}>{" "}</Text>);
       }
@@ -78,14 +99,14 @@ export function useFeedLines(
         const prev = eff[ei - 1];
         const prevGH = isGH(prev);
         const currGH = isGH(item);
-        const prevKind = prevGH ? "gh" : (prev as FeedItem).kind;
-        const currKind = currGH ? "gh" : (item as FeedItem).kind;
+        const prevKind = prevGH ? "gh" : (prev as EffFeedItem).item.kind;
+        const currKind = currGH ? "gh" : (item as EffFeedItem).item.kind;
         const prevTool = prevKind === "tool" || prevKind === "reasoning";
         const currTool = currKind === "tool" || currKind === "reasoning";
 
         if (currKind === "gh") {
           if (prevTool) {
-            lines.push(<Text key={key++} color="gray" dimColor>{S_BAR}</Text>);
+            lines.push(<Text key={key++} color={theme.textDim}>{S_BAR}</Text>);
             lines.push(<Text key={key++}>{" "}</Text>);
           } else if (prevKind !== "gh") {
             lines.push(<Text key={key++}>{" "}</Text>);
@@ -96,7 +117,7 @@ export function useFeedLines(
           }
         } else if (prevTool && currTool) {
           if (!(prevKind === "reasoning" && currKind === "reasoning")) {
-            lines.push(<Text key={key++} color="gray" dimColor>{S_BAR}</Text>);
+            lines.push(<Text key={key++} color={theme.textDim}>{S_BAR}</Text>);
           }
         } else if (prevTool) {
           if (currKind !== "user") lines.push(<Text key={key++}>{" "}</Text>);
@@ -114,101 +135,149 @@ export function useFeedLines(
       }
 
       if (isGH(item)) {
-        const { info, collapsed, focused } = item;
+        const { info, collapsed, focused, key: groupKey } = item;
+        const headerLineIdx = lines.length;
+        const hovered = hoveredLineIdx === headerLineIdx;
+        if (!info.active) groupToggleAtLine.set(headerLineIdx, groupKey);
         const icon = info.active ? "◎" : collapsed ? "▶" : "▼";
-        const hc = focused ? "#FFE0C2" : "gray";
-        const names = info.toolNames.slice(0, 5).join(", ") + (info.toolNames.length > 5 ? ", …" : "");
+        const hc = focused || hovered ? theme.accent : theme.textDim;
+        const labels = info.stepLabels.slice(0, 6).join(", ") + (info.stepLabels.length > 6 ? ", …" : "");
         lines.push(
           <Text key={key++} wrap="truncate">
-            <Text color={info.active ? "#FFE0C2" : hc} bold={info.active || focused}>{icon} </Text>
-            <Text color={info.active ? "white" : hc} bold={info.active || focused} dimColor={!info.active && !focused}>
+            <Text color={info.active ? theme.accent : hc} bold={info.active || focused || hovered}>{icon} </Text>
+            <Text color={info.active ? theme.text : hc} bold={info.active || focused || hovered}>
               {info.itemCount} step{info.itemCount !== 1 ? "s" : ""}
             </Text>
-            {(collapsed || info.active) && names ? (
-              <Text color="gray" dimColor>{"  "}{names}</Text>
+            {(collapsed || info.active) && labels ? (
+              <Text color={theme.textDim}>{"  "}{labels}</Text>
             ) : null}
             {focused && !collapsed && !info.active ? (
-              <Text color="gray" dimColor>{"  [c] collapse · [esc] unfocus"}</Text>
+              <Text color={theme.textDim}>{"  [c] collapse · [esc] unfocus"}</Text>
             ) : null}
           </Text>
         );
         return;
       }
 
-      const fi = item as FeedItem;
+      const fi = (item as EffFeedItem).item;
+      const feedIdx = (item as EffFeedItem).idx;
 
       if (fi.kind === "tool") {
-        const toolIcon = fi.status === "running"
+        const running = fi.status === "running";
+        const failed = fi.status === "error";
+        const itemId = feedToolItemId(feedIdx, fi.toolCallId);
+        const collapsible = isCollapsibleToolName(fi.name) && !running;
+        const collapsed = collapsible && isToolItemCollapsed(itemId, fi.name, fi.status, itemExpandState);
+        const headerLineIdx = lines.length;
+        const hovered = hoveredLineIdx === headerLineIdx;
+        const toolIcon = running
           ? SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]
           : TOOL_ICONS[fi.name] ?? "·";
-        const symColor = "#CFB59D";
-        const nameColor = fi.status === "running" ? "white" : "gray";
-        const summaryLine = fi.summary.replace(/\s+/gu, " ").trim();
-        const toolSummary = summaryLine.length > innerWidth - fi.name.length - 6
-          ? summaryLine.slice(0, Math.max(0, innerWidth - fi.name.length - 7)) + "…"
-          : summaryLine;
+        const symColor = failed ? theme.error : theme.accentDim;
+        const nameColor = running ? theme.text : failed ? theme.error : theme.textDim;
+        const panelWidth = innerWidth - 4;
+        const preview = formatToolResultPreview(fi.name, fi.summary, fi.result, fi.status);
+        const bodyLines = formatToolResultLines(
+          fi.name, fi.summary, fi.result, fi.status, panelWidth, theme, !collapsed,
+        );
+
+        if (collapsible) toggleAtLine.set(headerLineIdx, itemId);
+
         lines.push(
           <Text key={key++} wrap="truncate">
-            <Text color={symColor} bold={fi.status === "running"}>{toolIcon}</Text>
-            <Text color={nameColor} bold={fi.status === "running"} dimColor={fi.status === "done"}> {fi.name}</Text>
-            <Text color="gray" dimColor>  {toolSummary}</Text>
+            {collapsible ? (
+              <Text color={hovered ? theme.accent : theme.textDim} bold={hovered}>
+                {collapsed ? "▶ " : "▼ "}
+              </Text>
+            ) : null}
+            <Text color={symColor} bold={running}>{toolIcon}</Text>
+            <Text color={nameColor} bold={running || failed || hovered}> {fi.name}</Text>
+            {failed ? <Text color={theme.error}> failed</Text> : null}
+            {running ? <Text color={theme.textDim}> …</Text> : null}
+            {!running && !failed && collapsed && preview ? (
+              <Text color={theme.textDim}>  {preview}</Text>
+            ) : null}
           </Text>
         );
+
+        for (const row of bodyLines) {
+          if (row.length === 0) {
+            lines.push(<Text key={key++} color={theme.textDim}>{S_BAR}</Text>);
+            continue;
+          }
+          lines.push(
+            <Text key={key++} wrap="truncate-end">
+              <Text color={theme.textDim}>{S_BAR} </Text>
+              {row.map((s, i) => (
+                <Text
+                  key={i}
+                  color={s.color ?? theme.textDim}
+                  bold={s.bold}
+                  italic={s.italic}
+                  underline={s.underline}
+                  dimColor={s.dim}
+                >
+                  {hyperlink(s.text, s.url)}
+                </Text>
+              ))}
+            </Text>
+          );
+        }
       } else if (fi.kind === "user") {
         const bandW = innerWidth;
         const time = formatTime(fi.ts);
         const rightPad = time ? time.length + 1 : 0;
         const wrapped = wrapText(fi.text, Math.max(10, bandW - 4 - rightPad));
         const blank = " ".repeat(bandW);
-        lines.push(<Text key={key++} backgroundColor={USER_BAND_BG}>{blank}</Text>);
+        lines.push(<Text key={key++} {...bandBg}>{blank}</Text>);
         wrapped.forEach((l, idx) => {
           const isFirst = idx === 0;
           const prefix = isFirst ? "  ❯ " : "    ";
           const left = prefix + l;
           const pad = Math.max(1, bandW - displayWidth(left) - (isFirst ? rightPad : 0));
           lines.push(
-            <Text key={key++} backgroundColor={USER_BAND_BG} wrap="truncate">
-              <Text color={isFirst ? "#FFE0C2" : "white"}>{prefix}</Text>
-              <Text color="white">{l}</Text>
+            <Text key={key++} {...bandBg} wrap="truncate">
+              <Text color={isFirst ? theme.accent : theme.text}>{prefix}</Text>
+              <Text color={theme.text}>{l}</Text>
               <Text>{" ".repeat(pad)}</Text>
-              {isFirst && time ? <Text color="gray" dimColor>{time + " "}</Text> : null}
+              {isFirst && time ? <Text color={theme.textDim}>{time + " "}</Text> : null}
             </Text>
           );
         });
-        lines.push(<Text key={key++} backgroundColor={USER_BAND_BG}>{blank}</Text>);
+        lines.push(<Text key={key++} {...bandBg}>{blank}</Text>);
       } else if (fi.kind === "status") {
-        lines.push(<Text key={key++} color="gray" dimColor wrap="truncate">{"  · "}{fi.text}</Text>);
+        lines.push(<Text key={key++} color={theme.textDim} wrap="truncate">{"  · "}{fi.text}</Text>);
       } else if (fi.kind === "reasoning") {
         const isOpen = fi.durationMs === undefined;
         const elapsedMs = fi.durationMs ?? (fi.startedAt ? Date.now() - fi.startedAt : 0);
         const titleText = isOpen ? `Thinking… ${fmtDuration(elapsedMs)}` : `Thought for ${fmtDuration(elapsedMs)}`;
         lines.push(
           <Text key={key++} wrap="truncate-end">
-            <Text color="gray" dimColor>◌ </Text>
-            <Text color="gray" bold={isOpen} dimColor={!isOpen}>{titleText}</Text>
+            <Text color={theme.textDim}>◌ </Text>
+            <Text color={theme.textDim} bold={isOpen}>{titleText}</Text>
           </Text>
         );
-        for (const segLine of markdownToSegLines(fi.text, innerWidth - 4)) {
+        for (const segLine of markdownToSegLines(fi.text, innerWidth - 4, theme)) {
           if (segLine.length === 0) {
-            lines.push(<Text key={key++} color="gray" dimColor>{S_BAR}</Text>);
+            lines.push(<Text key={key++} color={theme.textDim}>{S_BAR}</Text>);
             continue;
           }
           lines.push(
-            <Text key={key++} color="gray" dimColor italic wrap="truncate-end">
-              <Text color="gray" dimColor>{"│ "}</Text>
+            <Text key={key++} color={theme.textDim} italic wrap="truncate-end">
+              <Text color={theme.textDim}>{"│ "}</Text>
               {segLine.map((s, i) => (
-                <Text key={i} color="gray" bold={s.bold} italic={s.italic ?? true} underline={s.underline} dimColor>{hyperlink(s.text, s.url)}</Text>
+                <Text key={i} color={theme.textDim} bold={s.bold} italic={s.italic ?? true} underline={s.underline}>{hyperlink(s.text, s.url)}</Text>
               ))}
             </Text>
           );
         }
       } else {
-        for (const segLine of markdownToSegLines(fi.text, innerWidth - 2)) {
+        for (const segLine of markdownToSegLines(fi.text, innerWidth - 2, theme)) {
           if (segLine.length === 0) { lines.push(<Text key={key++}>{" "}</Text>); continue; }
           lines.push(
             <Text key={key++} wrap="truncate-end">
               {segLine.map((s, i) => (
-                <Text key={i} color={s.color ?? "white"} bold={s.bold} italic={s.italic} underline={s.underline} dimColor={s.dim}>{hyperlink(s.text, s.url)}</Text>
+                <Text key={i} color={s.color ?? theme.text} bold={s.bold} italic={s.italic} underline={s.underline} dimColor={s.dim}>{hyperlink(s.text, s.url)}</Text>
               ))}
             </Text>
           );
@@ -216,7 +285,7 @@ export function useFeedLines(
       }
     });
 
-    return lines;
+    return { lines, toggleAtLine, groupToggleAtLine };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feed, innerWidth, reasoningTick, spinnerFrame, collapsedGroups, focusedGroupKey]);
+  }, [feed, innerWidth, reasoningTick, spinnerFrame, collapsedGroups, focusedGroupKey, itemExpandState, hoveredLineIdx, config, theme]);
 }

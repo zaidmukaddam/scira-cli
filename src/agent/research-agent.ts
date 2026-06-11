@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { ToolLoopAgent, isLoopFinished, type ToolSet } from "ai";
-import ora from "ora";
+import { Spinner } from "picospinner";
 import { SciraConfig } from "../types/index.js";
 import { getLanguageModel, requireLlmKeys } from "../providers/llm/registry.js";
 import { createResearchTools, createOneShotTools, createCodingTools, ApprovalCallback, EscalateCallback } from "./tools.js";
@@ -198,7 +198,7 @@ export async function createOneShotAgent(
  * Run the research agent headlessly, streaming a compact timeline to stdout.
  */
 export async function runResearchAgent(runPath: string, goal: string, config: SciraConfig, workspacePath?: string): Promise<void> {
-  const spinner = ora({ stream: stdout });
+  const spinner = new Spinner();
 
   const onApprovalRequired: ApprovalCallback = async (toolName, description) => {
     spinner.stop();
@@ -220,7 +220,8 @@ export async function runResearchAgent(runPath: string, goal: string, config: Sc
 
     for await (const part of result.fullStream) {
     if (part.type === "tool-call") {
-      spinner.start(`${CODING_ICONS[part.toolName] ?? TOOL_ICONS[part.toolName] ?? "•"} ${part.toolName}  ${summarize(part.input)}`);
+      spinner.setText(`${CODING_ICONS[part.toolName] ?? TOOL_ICONS[part.toolName] ?? "•"} ${part.toolName}  ${summarize(part.input)}`);
+      spinner.start();
     } else if (part.type === "tool-result") {
       spinner.succeed(`${part.toolName}`);
     } else if (part.type === "tool-error") {

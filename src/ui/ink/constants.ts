@@ -1,15 +1,18 @@
 import { type SearchProvider } from "../../providers/llm/readiness.js";
 
-export const USER_BAND_BG = "#1c1c1c";
 export const S_BAR = "│";
 export const MENU_VISIBLE = 8;
 export const FILE_MENTION_MAX_CHARS = 20000;
 export const FILE_MENTION_SKIP = new Set([".git", "node_modules", "dist", ".scira"]);
 export const PROVIDERS: SearchProvider[] = ["parallel", "exa", "firecrawl"];
 
-export const CHAT_COMMANDS = ["/help", "/new", "/rerun", "/report", "/sources", "/claims", "/why", "/mcp", "/copy", "/usage", "/rename", "/model", "/llm", "/provider", "/key", "/keys", "/stop", "/back", "/quit"];
+export const CHAT_COMMANDS = ["/help", "/home", "/new", "/rerun", "/report", "/sources", "/claims", "/why", "/mcp", "/copy", "/usage", "/rename", "/model", "/llm", "/provider", "/theme", "/key", "/keys", "/stop", "/back", "/quit"];
+
+/** Slash commands that take an argument; ⏎ from the menu appends a space instead of running. */
+export const COMMANDS_NEEDING_ARGS = new Set(["/theme", "/key", "/rename", "/why"]);
 export const COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/help": "Show command and keyboard shortcuts.",
+  "/home": "Go to the home screen (or show the welcome card on home).",
   "/new": "Go to the home screen to start a new research run.",
   "/rerun": "Run the research agent again for this run.",
   "/report": "Show the generated report.md in the timeline.",
@@ -23,6 +26,7 @@ export const COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/model": "Open the model selector dropup.",
   "/llm": "Switch the LLM provider (gateway, xai, workers-ai).",
   "/provider": "Open the search provider selector.",
+  "/theme": "Set UI theme: /theme dark · /theme light · /theme auto",
   "/key": "Save an API key, e.g. /key EXA_API_KEY ...",
   "/keys": "Show which required API keys are set.",
   "/stop": "Abort the currently running agent turn.",

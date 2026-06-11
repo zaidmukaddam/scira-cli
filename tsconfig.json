@@ -10,6 +10,7 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
+    "types": ["bun-types"],
     "jsx": "react-jsx",
     "sourceMap": false
   },

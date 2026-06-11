@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -257,6 +257,7 @@ export async function initCommand() {
   let models: string[] = [];
   try {
     const tempConfig: SciraConfig = {
+      theme: "auto",
       llmProvider: llmProvider as LlmProvider,
       model: defaultModelFor(llmProvider as LlmProvider),
       lastModels: {},
@@ -349,6 +350,7 @@ export async function initCommand() {
 
   // Write config file
   const config: SciraConfig = {
+    theme: existingConfig?.theme ?? "auto",
     llmProvider: llmProvider as LlmProvider,
     model,
     lastModels: { [llmProvider as LlmProvider]: model, ...(existingConfig?.lastModels || {}) },

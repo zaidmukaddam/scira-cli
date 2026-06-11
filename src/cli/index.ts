@@ -1,11 +1,16 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import process from "node:process";
+
+if (typeof Bun === "undefined") {
+  console.error("scira requires Bun. Install it from https://bun.sh and run: bun run dist/cli/index.js");
+  process.exit(1);
+}
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { Command } from "commander";
+import sade from "sade";
 
 const { version: pkgVersion } = JSON.parse(
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../package.json"), "utf8")
@@ -35,17 +40,17 @@ import { saveGlobalMcpConfig } from "../config/load-config.js";
 import { runOAuthFlow } from "../tools/mcp-oauth.js";
 import { initCommand } from "./commands/init.js";
 
-const program = new Command();
+const prog = sade("scira");
 
-program
-  .name("scira")
-  .description("Terminal-native AI research agent.")
-  .version(pkgVersion);
+prog
+  .version(pkgVersion)
+  .describe("Terminal-native AI research agent.");
 
-program
-  .argument("[question]", "research question or coding task")
-  .option("--workspace <path>", "enable coding tools for this workspace directory")
-  .action(async (question?: string, options?: { workspace?: string }) => {
+prog
+  .command("*", "research question or coding task", { default: true })
+  .option("--workspace", "enable coding tools for this workspace directory")
+  .action(async (opts: { workspace?: string; _: string[] }) => {
+    const question = opts._.length > 0 ? opts._.join(" ") : undefined;
     const config = await loadConfig();
     if (!question) {
       await openTuiHome(config);
@@ -54,32 +59,31 @@ program
     requireLlmKeys(config);
     const run = await createRun(question, config);
     console.log(`Run: ${run.path}`);
-    if (options?.workspace) {
-      console.log(`Workspace: ${options.workspace}`);
+    if (opts.workspace) {
+      console.log(`Workspace: ${opts.workspace}`);
     }
     console.log("");
-    await runResearchAgent(run.path, question, config, options?.workspace);
+    await runResearchAgent(run.path, question, config, opts.workspace);
     console.log(`\nRun complete: ${run.path}`);
   });
 
-program.command("init")
-  .description("initialize Scira with API keys and configuration")
+prog
+  .command("init", "initialize Scira with API keys and configuration")
   .action(async () => {
     await initCommand();
   });
 
-program.command("new")
-  .argument("<question>")
-  .description("create a new interactive research run")
+prog
+  .command("new <question>", "create a new interactive research run")
   .option("--no-shell", "create the run without opening the interactive shell")
   .option("--tui", "open the Ink TUI after creating the run")
   .option("--shell", "open the classic readline shell after creating the run")
-  .action(async (question: string, options: { shell?: boolean; tui?: boolean }) => {
+  .action(async (question: string, opts: { shell?: boolean; tui?: boolean }) => {
     const config = await loadConfig();
     const run = await createRun(question, config);
-    if (options.tui) {
+    if (opts.tui) {
       await openTui(run.path, config);
-    } else if (options.shell) {
+    } else if (opts.shell) {
       await openShell(run.path, config);
     } else {
       console.log(`Created: ${run.path}`);
@@ -87,39 +91,36 @@ program.command("new")
     }
   });
 
-program.command("resume")
-  .argument("<run-id>")
-  .description("resume an existing run")
+prog
+  .command("resume <run-id>", "resume an existing run")
   .option("--shell", "resume in the classic readline shell")
   .option("--tui", "resume in the Ink TUI")
-  .action(async (runId: string, options: { shell?: boolean; tui?: boolean }) => {
+  .action(async (runId: string, opts: { shell?: boolean; tui?: boolean }) => {
     const config = await loadConfig();
     const runPath = await findRun(runId, config);
-    if (options.shell) {
+    if (opts.shell) {
       await openShell(runPath, config);
     } else {
       await openTui(runPath, config);
     }
   });
 
-program.command("list")
-  .description("list runs")
+prog
+  .command("list", "list runs")
   .action(async () => {
     const config = await loadConfig();
     console.table(await listRuns(config));
   });
 
-program.command("show")
-  .argument("<run-id>")
-  .description("show run status")
+prog
+  .command("show <run-id>", "show run status")
   .action(async (runId: string) => {
     const config = await loadConfig();
     console.log(await summarizeRun(await findRun(runId, config)));
   });
 
-program.command("run")
-  .argument("<run-id>")
-  .description("run (or re-run) the research agent on an existing run")
+prog
+  .command("run <run-id>", "run (or re-run) the research agent on an existing run")
   .action(async (runId: string) => {
     const config = await loadConfig();
     requireLlmKeys(config);
@@ -129,24 +130,22 @@ program.command("run")
     console.log(`\nRun complete: ${runPath}`);
   });
 
-program.command("verify")
-  .argument("<run-id>")
-  .description("show the verification report for a run's claims")
+prog
+  .command("verify <run-id>", "show the verification report for a run's claims")
   .action(async (runId: string) => {
     const config = await loadConfig();
     const runPath = await findRun(runId, config);
     console.log(await verificationReport(runPath));
   });
 
-program.command("export")
-  .argument("<run-id>")
-  .option("--format <format>", "export format: md | json | csv", "md")
-  .option("--output <file>", "write to file instead of stdout")
-  .description("export run report (md, json, or csv)")
-  .action(async (runId: string, options: { format: string; output?: string }) => {
-    const fmt = options.format.toLowerCase();
+prog
+  .command("export <run-id>", "export run report (md, json, or csv)")
+  .option("--format", "export format: md | json | csv", "md")
+  .option("--output", "write to file instead of stdout")
+  .action(async (runId: string, opts: { format: string; output?: string }) => {
+    const fmt = opts.format.toLowerCase();
     if (!["md", "json", "csv"].includes(fmt)) {
-      throw new Error(`Unknown format "${options.format}". Supported: md, json, csv.`);
+      throw new Error(`Unknown format "${opts.format}". Supported: md, json, csv.`);
     }
     const config = await loadConfig();
     const runPath = await findRun(runId, config);
@@ -164,21 +163,19 @@ program.command("export")
       const bundle = { runId, goal, sources, claims };
       output = fmt === "json" ? toJson(bundle) : toCsv(bundle);
     }
-    if (options.output) {
+    if (opts.output) {
       const { writeFile, mkdir } = await import("node:fs/promises");
       const { dirname } = await import("node:path");
-      await mkdir(dirname(options.output), { recursive: true });
-      await writeFile(options.output, output, "utf8");
-      console.log(`Exported to ${options.output}`);
+      await mkdir(dirname(opts.output), { recursive: true });
+      await writeFile(opts.output, output, "utf8");
+      console.log(`Exported to ${opts.output}`);
     } else {
       console.log(output);
     }
   });
 
-const mcp = program.command("mcp").description("manage MCP servers in .scira/config.json");
-
-mcp.command("list")
-  .description("list configured MCP servers")
+prog
+  .command("mcp list", "list configured MCP servers")
   .action(async () => {
     const config = await loadConfig();
     const dt = config.mcp.chromeDevtools;
@@ -191,25 +188,22 @@ mcp.command("list")
     }
   });
 
-mcp.command("add")
-  .argument("<transport>", "stdio | sse | http")
-  .argument("<name>")
-  .argument("<target>")
-  .argument("[args...]")
-  .option("--bearer <token>", "bearer token for Authorization header")
-  .option("--header <name:value>", "custom header in name:value format")
+prog
+  .command("mcp add <transport> <name> <target> [args...]", "add an MCP server")
+  .option("--bearer", "bearer token for Authorization header")
+  .option("--header", "custom header in name:value format")
   .option("--oauth", "use OAuth PKCE flow (requires --oauth-client-id)")
-  .option("--oauth-client-id <id>", "OAuth client ID")
-  .option("--oauth-client-secret <secret>", "OAuth client secret (optional for PKCE)")
-  .option("--oauth-issuer <url>", "OAuth issuer URL for auto-discovery")
-  .option("--oauth-auth-url <url>", "OAuth authorization endpoint URL")
-  .option("--oauth-token-url <url>", "OAuth token endpoint URL")
-  .option("--oauth-scopes <scopes>", "OAuth scopes (space-separated)")
-  .description("add an MCP server")
+  .option("--oauth-client-id", "OAuth client ID")
+  .option("--oauth-client-secret", "OAuth client secret (optional for PKCE)")
+  .option("--oauth-issuer", "OAuth issuer URL for auto-discovery")
+  .option("--oauth-auth-url", "OAuth authorization endpoint URL")
+  .option("--oauth-token-url", "OAuth token endpoint URL")
+  .option("--oauth-scopes", "OAuth scopes (space-separated)")
   .action(async (
-    transport: string, name: string, target: string, args: string[],
+    transport: string, name: string, target: string, args: string[] | string,
     opts: { bearer?: string; header?: string; oauth?: boolean; oauthClientId?: string; oauthClientSecret?: string; oauthIssuer?: string; oauthAuthUrl?: string; oauthTokenUrl?: string; oauthScopes?: string }
   ) => {
+    const restArgs = Array.isArray(args) ? args : args ? [args] : [];
     if (!["stdio", "sse", "http"].includes(transport)) {
       throw new Error("transport must be one of: stdio, sse, http");
     }
@@ -244,7 +238,7 @@ mcp.command("add")
       oauthScopes: opts.oauthScopes,
     };
     const entry = transport === "stdio"
-      ? { ...base, transport: "stdio" as const, command: target, args }
+      ? { ...base, transport: "stdio" as const, command: target, args: restArgs }
       : { ...base, transport: transport as "sse" | "http", url: target, args: [] };
     const nextMcp = { ...config.mcp, servers: [...config.mcp.servers, entry] };
     await saveGlobalMcpConfig(nextMcp);
@@ -254,9 +248,8 @@ mcp.command("add")
     }
   });
 
-mcp.command("oauth")
-  .argument("<name>", "name of the OAuth MCP server to authenticate")
-  .description("run OAuth PKCE flow for an MCP server")
+prog
+  .command("mcp oauth <name>", "run OAuth PKCE flow for an MCP server")
   .action(async (name: string) => {
     const config = await loadConfig();
     const srv = config.mcp.servers.find((s) => s.name === name);
@@ -265,9 +258,8 @@ mcp.command("oauth")
     await runOAuthFlow(srv, config);
   });
 
-mcp.command("enable")
-  .argument("<name>")
-  .description("enable an MCP server")
+prog
+  .command("mcp enable <name>", "enable an MCP server")
   .action(async (name: string) => {
     const config = await loadConfig();
     const nextMcp = name === "chromeDevtools" || name === "devtools"
@@ -277,9 +269,8 @@ mcp.command("enable")
     console.log(`Enabled MCP server "${name}"`)
   });
 
-mcp.command("disable")
-  .argument("<name>")
-  .description("disable an MCP server")
+prog
+  .command("mcp disable <name>", "disable an MCP server")
   .action(async (name: string) => {
     const config = await loadConfig();
     const nextMcp = name === "chromeDevtools" || name === "devtools"
@@ -289,9 +280,8 @@ mcp.command("disable")
     console.log(`Disabled MCP server "${name}"`)
   });
 
-mcp.command("remove")
-  .argument("<name>")
-  .description("remove an MCP server from config")
+prog
+  .command("mcp remove <name>", "remove an MCP server from config")
   .action(async (name: string) => {
     const config = await loadConfig();
     if (!config.mcp.servers.some((s) => s.name === name)) {
@@ -302,17 +292,16 @@ mcp.command("remove")
     console.log(`Removed MCP server "${name}" from ~/.scira/config.json`);
   });
 
-program.command("watch")
-  .argument("<goal>", "research goal to monitor, e.g. \"AI search market\"")
-  .option("--daily",   "run once per day (default)")
-  .option("--hourly",  "run once per hour")
-  .option("--weekly",  "run once per week")
-  .option("--interval <ms>", "custom interval in milliseconds")
-  .option("--runs <n>", "stop after N runs (default: run forever)", (v) => parseInt(v, 10))
-  .description("monitor a topic by running research on a schedule and diffing reports")
-  .action(async (goal: string, options: {
+prog
+  .command("watch <goal>", "monitor a topic by running research on a schedule and diffing reports")
+  .option("--daily", "run once per day (default)")
+  .option("--hourly", "run once per hour")
+  .option("--weekly", "run once per week")
+  .option("--interval", "custom interval in milliseconds")
+  .option("--runs", "stop after N runs (default: run forever)")
+  .action(async (goal: string, opts: {
     daily?: boolean; hourly?: boolean; weekly?: boolean;
-    interval?: string; runs?: number;
+    interval?: string | number; runs?: string | number;
   }) => {
     const config = await loadConfig();
     const INTERVALS: Record<string, number> = {
@@ -320,23 +309,24 @@ program.command("watch")
       daily:  24 * 60 * 60 * 1000,
       weekly: 7 * 24 * 60 * 60 * 1000,
     };
-    const intervalMs = options.interval
-      ? parseInt(options.interval, 10)
-      : options.hourly  ? INTERVALS.hourly
-      : options.weekly  ? INTERVALS.weekly
+    const intervalMs = opts.interval
+      ? parseInt(String(opts.interval), 10)
+      : opts.hourly  ? INTERVALS.hourly
+      : opts.weekly  ? INTERVALS.weekly
       : INTERVALS.daily;
     if (Number.isNaN(intervalMs) || intervalMs < 1000) {
       throw new Error("Interval must be at least 1000 ms.");
     }
+    const maxRuns = opts.runs != null ? parseInt(String(opts.runs), 10) : undefined;
     const { watchLoop } = await import("../watch/runner.js");
     const controller = new AbortController();
     process.on("SIGINT",  () => { console.log("\nStopping watch…"); controller.abort(); });
     process.on("SIGTERM", () => { controller.abort(); });
     console.log(`Watching: "${goal}"`);
-    console.log(`Interval: ${intervalMs / 1000}s${options.runs ? ` · max ${options.runs} runs` : ""}`);
+    console.log(`Interval: ${intervalMs / 1000}s${maxRuns ? ` · max ${maxRuns} runs` : ""}`);
     console.log("Press Ctrl-C to stop.\n");
     await watchLoop({
-      goal, intervalMs, maxRuns: options.runs, config,
+      goal, intervalMs, maxRuns, config,
       onRunStart:    (runPath, tick) => { console.log(`\n[tick ${tick + 1}] Starting run → ${runPath}`); },
       onRunComplete: (runPath, diffText, tick) => { console.log(`[tick ${tick + 1}] Done. Diff:\n${diffText}`); },
       onError:       (err, tick) => { console.error(`[tick ${tick + 1}] Error: ${err.message}`); },
@@ -344,27 +334,27 @@ program.command("watch")
     console.log("Watch finished.");
   });
 
-program.command("models")
-  .option("--provider <provider>", "gateway only: filter by model prefix such as anthropic, openai, or google")
-  .description("list models for the configured LLM provider")
-  .action(async (options: { provider?: string }) => {
+prog
+  .command("models", "list models for the configured LLM provider")
+  .option("--provider", "gateway only: filter by model prefix such as anthropic, openai, or google")
+  .action(async (opts: { provider?: string }) => {
     const config = await loadConfig();
-    const models = config.llmProvider === "gateway" && options.provider
-      ? await listGatewayModels(options.provider)
+    const models = config.llmProvider === "gateway" && opts.provider
+      ? await listGatewayModels(opts.provider)
       : await listModels(config);
     for (const model of models) {
       console.log(model.id);
     }
   });
 
-program.command("config")
-  .description("print resolved config")
+prog
+  .command("config", "print resolved config")
   .action(async () => {
     console.log(JSON.stringify(await loadConfig(), null, 2));
   });
 
-program.command("doctor")
-  .description("check local setup")
+prog
+  .command("doctor", "check local setup")
   .action(async () => {
     const config = await loadConfig();
     const nodeCheck = checkNodeVersion(20);
@@ -456,7 +446,10 @@ async function commandResolves(command: string): Promise<boolean> {
 }
 
 try {
-  await program.parseAsync(process.argv);
+  const parsed = prog.parse(process.argv, { lazy: true });
+  if (parsed?.handler) {
+    await parsed.handler(...parsed.args);
+  }
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;

@@ -2,7 +2,10 @@ import { z } from "zod";
 
 export const ApprovalModeSchema = z.enum(["manual", "suggest", "auto"]);
 
+export const ThemeSchema = z.enum(["dark", "light", "auto"]).default("auto");
+
 export const SciraConfigSchema = z.object({
+  theme: ThemeSchema,
   llmProvider: z.enum(["gateway", "xai", "workers-ai", "huggingface"]).default("gateway"),
   model: z.string().default("deepseek/deepseek-v4-flash"),
   // last selected model per LLM provider, restored when switching back

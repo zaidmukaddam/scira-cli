@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { Box, Text, useApp, useStdout, useStdin } from "ink";
+import { Box, useApp, useStdout, useStdin } from "ink";
 import { SciraConfig, RunState } from "../../types/index.js";
 import { type Screen, type ModelUsage, type TurnUsage, type ApprovalPending } from "./types.js";
 import { CHAT_COMMANDS, MENU_VISIBLE } from "./constants.js";
@@ -7,8 +7,10 @@ import { CWD_DISPLAY, wrapText, wrapInputWithCursor, loadInputHistory, saveInput
 import { deleteRun } from "../../storage/run-store.js";
 import { useMountEffect, TipCycler, AnimationTick, MouseTracker } from "./components/effects.js";
 import { useFeedLines, computeGroups } from "./hooks/use-feed-lines.js";
+import { feedToolItemId, isToolItemCollapsed } from "./lib/tool-result.js";
 import { useAgentTurn } from "./hooks/use-agent-turn.js";
-import { TopBar, InputBar, HintLine, CommandMenuBox, HelpBox, ApprovalBox, MenuDialog, McpDialog } from "./components/overlays.js";
+import { TopBar, InputBar, HintLine, CommandMenuBox, HelpBox, ApprovalBox, MenuDialog, McpDialog, buildMcpDialogRows, type McpDialogRow } from "./components/overlays.js";
+import { useMcpActions } from "./hooks/use-mcp-actions.js";
 import { useKeyboard } from "./hooks/use-keyboard.js";
 import { HomeScreen } from "./components/home-screen.js";
 import { useFeed } from "./hooks/use-feed.js";
@@ -17,6 +19,7 @@ import { useSuggestions } from "./hooks/use-suggestions.js";
 import { useSubmit } from "./hooks/use-submit.js";
 import { useSession } from "./hooks/use-session.js";
 import { useMouse } from "./hooks/use-mouse.js";
+import { ThemeProvider, useTheme } from "./hooks/use-theme.js";
 
 export type SciraAppProps = {
   runPath?: string;
@@ -44,6 +47,7 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
   const [notice, setNotice] = useState("");
   const [pendingRerun, setPendingRerun] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
+  const [mcpRowIdx, setMcpRowIdx] = useState(0);
 
   const [sessions, setSessions] = useState<RunState[]>([]);
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -80,7 +84,7 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [heroHidden, setHeroHidden] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [blink, setBlink] = useState(true);
+  const [, setBlink] = useState(true);
   const [frame, setFrame] = useState(0);
   const [reasoningTick, setReasoningTick] = useState(0);
 
@@ -92,6 +96,24 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
   const [collapsedGroups, setCollapsedGroups] = useState<Set<number>>(new Set());
   const [focusedGroupKey, setFocusedGroupKey] = useState<number | null>(null);
   const [pendingCollapse, setPendingCollapse] = useState<Set<number>>(new Set());
+  const [itemExpandState, setItemExpandState] = useState<Map<string, boolean>>(new Map());
+
+  React.useEffect(() => {
+    setItemExpandState(new Map());
+  }, [currentRunPath]);
+
+  const toggleToolItem = useCallback((id: string) => {
+    setItemExpandState((prev) => {
+      const tool = feed.find(
+        (it, i) => it.kind === "tool" && feedToolItemId(i, it.toolCallId) === id,
+      );
+      if (tool?.kind !== "tool") return prev;
+      const next = new Map(prev);
+      const collapsed = isToolItemCollapsed(id, tool.name, tool.status, prev);
+      next.set(id, collapsed);
+      return next;
+    });
+  }, [feed]);
 
   const doneGroupKeys = useMemo(() => {
     const { groups } = computeGroups(feed);
@@ -114,14 +136,18 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
     });
   }, [doneGroupKeys, feed]);
 
-  const toggleFocusedGroup = useCallback(() => {
-    if (focusedGroupKey === null) return;
+  const toggleGroup = useCallback((groupKey: number) => {
     setCollapsedGroups((prev) => {
       const next = new Set(prev);
-      if (next.has(focusedGroupKey)) next.delete(focusedGroupKey); else next.add(focusedGroupKey);
+      if (next.has(groupKey)) next.delete(groupKey); else next.add(groupKey);
       return next;
     });
-  }, [focusedGroupKey]);
+  }, []);
+
+  const toggleFocusedGroup = useCallback(() => {
+    if (focusedGroupKey === null) return;
+    toggleGroup(focusedGroupKey);
+  }, [focusedGroupKey, toggleGroup]);
 
   // Auto-collapse groups when they become inactive if they're in pendingCollapse
   React.useEffect(() => {
@@ -231,6 +257,49 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
     config, setConfig, screen, pushFeed, setNotice,
   });
 
+  const notifyMcp = useCallback((message: string) => {
+    if (screen === "chat") pushFeed({ kind: "status", text: message });
+    else setNotice(message);
+  }, [screen, pushFeed]);
+  const { toggleMcp, removeMcp } = useMcpActions(config, setConfig, notifyMcp);
+  const mcpRows = useMemo(() => buildMcpDialogRows(config), [config]);
+  const mcpRowCount = mcpRows.length;
+
+  const toggleMcpRow = useCallback((idx: number) => {
+    const row = mcpRows[idx];
+    if (!row) return;
+    void toggleMcp(row.key === "chromeDevtools"
+      ? { kind: "devtools" }
+      : { kind: "server", name: row.name });
+  }, [mcpRows, toggleMcp]);
+
+  const removeMcpRow = useCallback((idx: number) => {
+    const row = mcpRows[idx];
+    if (!row?.removable) return;
+    void removeMcp(row.name);
+    setMcpRowIdx((i) => Math.max(0, Math.min(i, mcpRowCount - 2)));
+  }, [mcpRows, mcpRowCount, removeMcp]);
+
+  const handleMcpToggle = useCallback((row: McpDialogRow) => {
+    void toggleMcp(row.key === "chromeDevtools"
+      ? { kind: "devtools" }
+      : { kind: "server", name: row.name });
+  }, [toggleMcp]);
+
+  const handleMcpRemove = useCallback((row: McpDialogRow) => {
+    if (!row.removable) return;
+    void removeMcp(row.name);
+    setMcpRowIdx((i) => Math.max(0, Math.min(i, mcpRowCount - 2)));
+  }, [mcpRowCount, removeMcp]);
+
+  React.useEffect(() => {
+    if (mcpOpen) setMcpRowIdx(0);
+  }, [mcpOpen]);
+
+  React.useEffect(() => {
+    setMcpRowIdx((i) => Math.min(i, Math.max(0, mcpRowCount - 1)));
+  }, [mcpRowCount]);
+
   const { runTurn } = useAgentTurn({
     config, currentRunPath, queuedPromptRef, fullModeRef, conversationRef, turnsRef, feedRef,
     setBusy, setScrollOffset, refreshRun, recordUsage, setMode, getSubscriber,
@@ -274,13 +343,34 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
 
 
   const hasRunningTool = feed.some((it) => it.kind === "tool" && it.status === "running");
-  const feedLines = useFeedLines(feed, innerWidth, reasoningTick, hasRunningTool ? frame : 0, collapsedGroups, focusedGroupKey);
+  const { lines: feedLines, toggleAtLine, groupToggleAtLine } = useFeedLines(
+    feed, innerWidth, reasoningTick, hasRunningTool ? frame : 0,
+    collapsedGroups, focusedGroupKey, itemExpandState, hoveredIdx, config,
+  );
 
   const contentRows = Math.max(1, feedRows);
   const maxScrollOffset = Math.max(0, feedLines.length - contentRows);
   wheelStateRef.current = { screen, maxScrollOffset };
   const clampedOffset = Math.min(scrollOffset, maxScrollOffset);
   const startIdx = Math.max(0, feedLines.length - contentRows - clampedOffset);
+
+  const feedStartRow = 3;
+  if (screen === "chat") {
+    const clickMap = new Map<number, (x: number) => void>();
+    const hoverMap = new Map<number, number>();
+    const registerLine = (lineIdx: number, onClick: () => void) => {
+      const vis = lineIdx - startIdx;
+      if (vis < 0 || vis >= contentRows) return;
+      const row = feedStartRow + vis;
+      clickMap.set(row, onClick);
+      hoverMap.set(row, lineIdx);
+    };
+    toggleAtLine.forEach((id, lineIdx) => registerLine(lineIdx, () => toggleToolItem(id)));
+    groupToggleAtLine.forEach((groupKey, lineIdx) => registerLine(lineIdx, () => toggleGroup(groupKey)));
+    clickMapRef.current = clickMap;
+    hoverMapRef.current = hoverMap;
+  }
+
   const visibleLines = feedLines.slice(startIdx, startIdx + contentRows);
   const scrollLabel = clampedOffset > 0
     ? (startIdx > 0 ? `↑ ${startIdx} · ↓ ${clampedOffset} · wheel/⇞⇟` : `top · ↓ ${clampedOffset} · wheel/⇞⇟`)
@@ -291,7 +381,10 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
     setNotice,
     exit,
     input: { text: inputText, setText: setInputText, cursorPos, setCursorPos, history: inputHistory, historyIndex, setHistoryIndex },
-    dialogs: { approvalPending, setApprovalPending, menu, setMenu, applyMenuSelection, helpOpen, setHelpOpen, mcpOpen, setMcpOpen },
+    dialogs: {
+      approvalPending, setApprovalPending, menu, setMenu, applyMenuSelection, helpOpen, setHelpOpen,
+      mcpOpen, setMcpOpen, mcpRowIdx, setMcpRowIdx, mcpRowCount, toggleMcpRow, removeMcpRow,
+    },
     suggestions: { activeSuggestions, activeSuggestionKind, commandMenuIndex, setCommandMenuIndex, acceptActiveSuggestion },
     chat: { setScrollOffset, contentRows, maxScrollOffset, pendingRerun, setPendingRerun, busy, stopTurn, submitChat, toggleAllGroups, toggleFocusedGroup, focusPrevGroup, focusNextGroup, unfocusGroup, hasFocusedGroup: focusedGroupKey !== null },
     home: { sessionsModalOpen, setSessionsModalOpen, sessionsModalIdx, setSessionsModalIdx, sessions, deleteSession, selectedIdx, setSelectedIdx, setHeroHidden, openRun, submitHome },
@@ -299,15 +392,19 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
 
   const activeUsage = usage[config.model];
 
+  const themed = (node: React.ReactNode): React.ReactElement => (
+    <ThemeProvider config={config} stdin={stdin} stdout={stdout}>{node}</ThemeProvider>
+  );
+
   if (screen === "home") {
-    return (
+    return themed(
       <Box flexDirection="column" width={cols} height={rows} paddingX={2}>
         <TipCycler setTipIndex={setTipIndex} />
-        {!sessionsModalOpen && stdout !== undefined && stdin !== undefined && (
+        {(!sessionsModalOpen || mcpOpen) && stdout !== undefined && stdin !== undefined && (
           <MouseTracker stdout={stdout} stdin={stdin} onData={handleMouseData} onUnmount={() => setHoveredIdx(null)} />
         )}
         {busy && <AnimationTick setBlink={setBlink} setFrame={setFrame} setReasoningTick={setReasoningTick} />}
-        <TopBar screen={screen} runState={runState} fullMode={fullMode} activeUsage={activeUsage} busy={busy} frame={frame} cwdDisplay={CWD_DISPLAY} />
+        <TopBar screen={screen} runState={runState} fullMode={fullMode} activeUsage={activeUsage} busy={busy} frame={frame} cwdDisplay={CWD_DISPLAY} config={config} />
         <HomeScreen
           cols={cols}
           rows={rows}
@@ -318,9 +415,12 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
           notice={notice}
           tipIndex={tipIndex}
           commandMenuHeight={commandMenuHeight}
+          mcpOpen={mcpOpen}
           sessionsModalOpen={sessionsModalOpen}
           sessionsModalIdx={sessionsModalIdx}
           inputText={inputText}
+          config={config}
+          modelName={modelName}
           clickMapRef={clickMapRef}
           hoverMapRef={hoverMapRef}
           setSelectedIdx={setSelectedIdx}
@@ -331,36 +431,67 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
           submitHome={submitHome}
           exit={exit}
         />
-        <Box flexDirection="column" backgroundColor="#141414" paddingBottom={1}>
-          <CommandMenuBox activeSuggestions={activeSuggestions} activeSuggestionKind={activeSuggestionKind} commandMenuIndex={commandMenuIndex} innerWidth={innerWidth} sessions={sessions} />
-          <InputBar inputLines={inputLines} cursorLine={cursorLine} cursorCol={cursorCol} showCursor={showCursor} approvalPending={!!approvalPending} busy={busy} frame={frame} boxWidth={boxWidth} modelName={modelName} />
-          <HintLine screen={screen} busy={busy} />
+        <Box flexDirection="column" paddingBottom={1}>
+          <CommandMenuBox activeSuggestions={activeSuggestions} activeSuggestionKind={activeSuggestionKind} commandMenuIndex={commandMenuIndex} innerWidth={innerWidth} sessions={sessions} config={config} />
+          <InputBar inputLines={inputLines} cursorLine={cursorLine} cursorCol={cursorCol} showCursor={showCursor} approvalPending={!!approvalPending} busy={busy} frame={frame} boxWidth={boxWidth} modelName={modelName} config={config} />
+          <HintLine screen={screen} busy={busy} config={config} />
         </Box>
-        <MenuDialog menu={menu} cols={cols} rows={rows} />
-        <McpDialog open={mcpOpen} config={config} cols={cols} rows={rows} />
-      </Box>
+        <MenuDialog menu={menu} cols={cols} rows={rows} config={config} />
+        <McpDialog
+          open={mcpOpen}
+          config={config}
+          cols={cols}
+          rows={rows}
+          selectedIdx={mcpRowIdx}
+          hoveredIdx={hoveredIdx}
+          onToggle={handleMcpToggle}
+          onRemove={handleMcpRemove}
+          clickMapRef={clickMapRef}
+          hoverMapRef={hoverMapRef}
+        />
+      </Box>,
     );
   }
 
-  return (
+  return themed(
     <Box flexDirection="column" width={cols} height={rows} paddingX={2}>
       {stdout !== undefined && stdin !== undefined && (
         <MouseTracker stdout={stdout} stdin={stdin} onData={handleMouseData} onUnmount={() => setHoveredIdx(null)} />
       )}
       {busy && <AnimationTick setBlink={setBlink} setFrame={setFrame} setReasoningTick={setReasoningTick} />}
-      <TopBar screen={screen} runState={runState} fullMode={fullMode} activeUsage={activeUsage} busy={busy} frame={frame} cwdDisplay={CWD_DISPLAY} />
+      <TopBar screen={screen} runState={runState} fullMode={fullMode} activeUsage={activeUsage} busy={busy} frame={frame} cwdDisplay={CWD_DISPLAY} config={config} />
       <Box flexDirection="column" flexGrow={1} paddingTop={1} overflow="hidden">
         {visibleLines}
       </Box>
-      <Box flexDirection="column" backgroundColor="#141414" paddingBottom={1}>
-        <CommandMenuBox activeSuggestions={activeSuggestions} activeSuggestionKind={activeSuggestionKind} commandMenuIndex={commandMenuIndex} innerWidth={innerWidth} sessions={sessions} />
-        <HelpBox open={helpOpen} innerWidth={innerWidth} />
-        {approvalPending && <ApprovalBox toolName={approvalPending.toolName} description={approvalPending.description} innerWidth={innerWidth} />}
-        <InputBar inputLines={inputLines} cursorLine={cursorLine} cursorCol={cursorCol} showCursor={showCursor} approvalPending={!!approvalPending} busy={busy} frame={frame} boxWidth={boxWidth} modelName={modelName} />
-        <HintLine screen={screen} busy={busy} scrollLabel={scrollLabel} hasDoneGroups={doneGroupKeys.length > 0} hasFocusedGroup={focusedGroupKey !== null} />
-      </Box>
-      <MenuDialog menu={menu} cols={cols} rows={rows} />
-      <McpDialog open={mcpOpen} config={config} cols={cols} rows={rows} />
+      <ChatInputChrome>
+        <CommandMenuBox activeSuggestions={activeSuggestions} activeSuggestionKind={activeSuggestionKind} commandMenuIndex={commandMenuIndex} innerWidth={innerWidth} sessions={sessions} config={config} />
+        <HelpBox open={helpOpen} innerWidth={innerWidth} config={config} />
+        {approvalPending && <ApprovalBox toolName={approvalPending.toolName} description={approvalPending.description} innerWidth={innerWidth} config={config} />}
+        <InputBar inputLines={inputLines} cursorLine={cursorLine} cursorCol={cursorCol} showCursor={showCursor} approvalPending={!!approvalPending} busy={busy} frame={frame} boxWidth={boxWidth} modelName={modelName} config={config} />
+        <HintLine screen={screen} busy={busy} scrollLabel={scrollLabel} hasDoneGroups={doneGroupKeys.length > 0} hasFocusedGroup={focusedGroupKey !== null} config={config} />
+      </ChatInputChrome>
+      <MenuDialog menu={menu} cols={cols} rows={rows} config={config} />
+      <McpDialog
+        open={mcpOpen}
+        config={config}
+        cols={cols}
+        rows={rows}
+        selectedIdx={mcpRowIdx}
+        hoveredIdx={hoveredIdx}
+        onToggle={handleMcpToggle}
+        onRemove={handleMcpRemove}
+        clickMapRef={clickMapRef}
+        hoverMapRef={hoverMapRef}
+      />
+    </Box>,
+  );
+}
+
+function ChatInputChrome({ children }: { children: React.ReactNode }): React.ReactElement {
+  const theme = useTheme();
+  return (
+    <Box flexDirection="column" {...(theme.background ? { backgroundColor: theme.background } : {})} paddingBottom={1}>
+      {children}
     </Box>
   );
 }

@@ -4,7 +4,6 @@ import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import stringWidth from "string-width";
 import { type ModelUsage, type TurnUsage, type SessionUsage } from "../types.js";
 import { FULL_MODE_TRIGGERS } from "../constants.js";
 
@@ -62,16 +61,16 @@ export function prettifyModelId(id: string): string {
 
 /** Terminal-cell width of a string (CJK/emoji aware, strips ANSI). */
 export function displayWidth(text: string): number {
-  return stringWidth(text);
+  return Bun.stringWidth(text);
 }
 
 /** Longest prefix of `text` whose terminal-cell width fits in `width`; returns its char length. */
 function fitChars(text: string, width: number): number {
-  if (stringWidth(text) === text.length) return Math.min(text.length, width);
+  if (Bun.stringWidth(text) === text.length) return Math.min(text.length, width);
   let cells = 0;
   let chars = 0;
   for (const ch of text) {
-    const w = stringWidth(ch);
+    const w = Bun.stringWidth(ch);
     if (cells + w > width) break;
     cells += w;
     chars += ch.length;
@@ -200,19 +199,103 @@ export function aggregateTurns(turns: TurnUsage[]): SessionUsage {
   return { total, byModel, turns };
 }
 
+function oneLine(text: string, max: number): string {
+  return text.replace(/\s+/gu, " ").trim().slice(0, max);
+}
+
+function toolOutputText(output: unknown): string {
+  if (output == null) return "";
+  if (typeof output === "string") return output;
+  try {
+    return JSON.stringify(output);
+  } catch {
+    return String(output);
+  }
+}
+
 export function summarizeToolInput(name: string, input: unknown): string {
   const obj = (input ?? {}) as Record<string, unknown>;
-  if (name === "bash") return String(obj.command ?? "");
+  if (name === "bash" || name === "runWorkspaceCommand") return String(obj.command ?? "");
   if (name === "webSearch") {
     const queries = Array.isArray(obj.queries) ? (obj.queries as string[]) : [];
     return queries.length > 0 ? queries.slice(0, 2).join(" · ") + (queries.length > 2 ? ` +${queries.length - 2}` : "") : String(obj.query ?? "");
   }
   if (name === "readUrl") return String(obj.url ?? "");
-  if (name === "writeFile" || name === "editFile" || name === "readFile") return String(obj.path ?? "");
+  if (name === "writeFile" || name === "editFile" || name === "readFile" || name === "readWorkspaceFile" || name === "writeWorkspaceFile" || name === "editWorkspaceFile") {
+    return String(obj.path ?? "");
+  }
+  if (name === "listWorkspaceDir" || name === "grepWorkspace") return String(obj.path ?? obj.pattern ?? "");
+  if (name === "readSkill" || name === "listSkills") return String(obj.name ?? "");
+  if (name === "createClaim" || name === "verifyClaim") return String(obj.id ?? "");
   try {
     return JSON.stringify(obj).slice(0, 80);
   } catch {
     return "";
   }
+}
+
+/** Short one-line summary of a completed tool's output for the feed. */
+export function summarizeToolOutput(name: string, output: unknown): string {
+  const text = toolOutputText(output);
+
+  if (name === "webSearch") {
+    try {
+      const parsed = JSON.parse(text) as Array<{ results?: Array<{ title?: string }> }>;
+      if (Array.isArray(parsed)) {
+        const total = parsed.reduce((n, s) => n + (s.results?.length ?? 0), 0);
+        const titles = parsed
+          .flatMap((s) => (s.results ?? []).slice(0, 2).map((r) => r.title?.trim()).filter(Boolean))
+          .slice(0, 3) as string[];
+        const head = total > 0 ? `${total} result${total === 1 ? "" : "s"}` : "no results";
+        return titles.length > 0 ? `${head} · ${titles.join(" · ")}` : head;
+      }
+    } catch { /* fall through */ }
+  }
+
+  if (name === "readUrl") {
+    const titleMatch = text.match(/^#\s+(.+)/m);
+    if (titleMatch?.[1]) return titleMatch[1].trim();
+    const snapshot = text.match(/\(snapshot saved to ([^)]+)\)/);
+    if (snapshot?.[1]) return `snapshot ${snapshot[1]}`;
+    return oneLine(text, 160);
+  }
+
+  if (name === "listSkills") {
+    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) return "no skills";
+    const preview = lines.slice(0, 2).map((l) => l.split(":")[0]?.trim() || l).join(", ");
+    return `${lines.length} skill${lines.length === 1 ? "" : "s"} · ${preview}${lines.length > 2 ? ", …" : ""}`;
+  }
+
+  if (name === "readFile" || name === "readWorkspaceFile") {
+    const lineCount = text.split("\n").length;
+    const preview = oneLine(text.split("\n")[0] ?? "", 60);
+    return `${lineCount} line${lineCount === 1 ? "" : "s"}${preview ? ` · ${preview}` : ""}`;
+  }
+
+  if (name === "writeFile" || name === "writeWorkspaceFile" || name === "editFile" || name === "editWorkspaceFile") {
+    return oneLine(text, 120) || "ok";
+  }
+
+  if (name === "bash" || name === "runWorkspaceCommand") {
+    const lines = text.split("\n").filter((l) => l.trim());
+    if (lines.length === 0) return "done";
+    return lines.slice(-3).map((l) => oneLine(l, 80)).join(" · ").slice(0, 200);
+  }
+
+  if (name === "listWorkspaceDir") {
+    const lines = text.split("\n").filter((l) => l.trim());
+    const preview = lines.slice(0, 3).map((l) => oneLine(l, 40)).join(", ");
+    const head = `${lines.length} entr${lines.length === 1 ? "y" : "ies"}`;
+    return preview ? `${head} · ${preview}${lines.length > 3 ? ", …" : ""}` : head;
+  }
+
+  if (name === "grepWorkspace") {
+    const lines = text.split("\n").filter((l) => l.trim());
+    if (lines.length === 0) return "no matches";
+    return `${lines.length} match${lines.length === 1 ? "" : "es"} · ${oneLine(lines[0], 80)}`;
+  }
+
+  return oneLine(text, 200);
 }
 

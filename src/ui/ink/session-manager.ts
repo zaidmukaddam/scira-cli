@@ -71,6 +71,37 @@ export function removeSession(runPath: string): void {
   sessions.delete(runPath);
 }
 
+/** Merge full tool results from the session buffer into a feed snapshot before persisting. */
+export function mergeFeedToolResults(feed: FeedItem[], buffer: FeedItem[]): FeedItem[] {
+  const toolById = new Map<string, Extract<FeedItem, { kind: "tool" }>>();
+  for (const item of buffer) {
+    if (item.kind === "tool" && item.toolCallId && item.result) {
+      toolById.set(item.toolCallId, item);
+    }
+  }
+  if (toolById.size === 0) return feed;
+
+  return feed.map((item) => {
+    if (item.kind !== "tool" || !item.toolCallId) return item;
+    const buffered = toolById.get(item.toolCallId);
+    if (!buffered?.result) return item;
+    const keepLonger = !item.result || buffered.result.length >= item.result.length;
+    if (!keepLonger && item.status !== "running") return item;
+    return {
+      ...item,
+      status: buffered.status,
+      result: keepLonger ? buffered.result : item.result,
+      summary: item.summary || buffered.summary,
+      name: item.name || buffered.name,
+    };
+  });
+}
+
+export function getSessionFeedBuffer(runPath: string): FeedItem[] {
+  const session = sessions.get(runPath);
+  return session ? [...session.feedBuffer] : [];
+}
+
 /** Route a feed item to the correct subscriber method and buffer it. */
 export function sessionPushFeed(runPath: string, item: FeedItem): void {
   const session = sessions.get(runPath);
@@ -100,12 +131,13 @@ export function sessionPushFeed(runPath: string, item: FeedItem): void {
       return;
     }
     if (item.kind === "tool" && (item.status === "done" || item.status === "error") && item.toolCallId) {
-      sub.markToolDone(item.toolCallId, item.status, item.result);
-      // Update existing tool item in buffer
+      const resultText = item.result;
+      if (!resultText) return;
+      sub.markToolDone(item.toolCallId, item.status, resultText);
       for (let i = session.feedBuffer.length - 1; i >= 0; i--) {
         const b = session.feedBuffer[i];
         if (b.kind === "tool" && b.status === "running" && (b.toolCallId === item.toolCallId || !item.toolCallId)) {
-          session.feedBuffer[i] = { ...b, status: item.status, result: item.result };
+          session.feedBuffer[i] = { ...b, status: item.status, result: resultText };
           break;
         }
       }
@@ -115,10 +147,12 @@ export function sessionPushFeed(runPath: string, item: FeedItem): void {
   }
   // No subscriber — always buffer
   if (item.kind === "tool" && (item.status === "done" || item.status === "error") && item.toolCallId) {
+    const resultText = item.result;
+    if (!resultText) return;
     for (let i = session.feedBuffer.length - 1; i >= 0; i--) {
       const b = session.feedBuffer[i];
       if (b.kind === "tool" && b.status === "running" && (b.toolCallId === item.toolCallId || !item.toolCallId)) {
-        session.feedBuffer[i] = { ...b, status: item.status, result: item.result };
+        session.feedBuffer[i] = { ...b, status: item.status, result: resultText };
         return;
       }
     }

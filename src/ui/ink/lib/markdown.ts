@@ -1,8 +1,9 @@
 import { displayWidth } from "./utils.js";
+import type { ThemeColors } from "../theme.js";
 
 export type MdSeg = { text: string; bold?: boolean; italic?: boolean; underline?: boolean; dim?: boolean; color?: string; url?: string };
 
-export function parseInlineMarkdown(text: string): MdSeg[] {
+export function parseInlineMarkdown(text: string, theme?: ThemeColors): MdSeg[] {
   const segs: MdSeg[] = [];
   const re = /(\[[^\]]+\]\([^)]+\))|(`[^`]+`)|(\*\*[^*]+\*\*)|(__[^_]+__)|(\*[^*\s][^*]*\*)|(_[^_\s][^_]*_)/gu;
   let last = 0;
@@ -10,11 +11,11 @@ export function parseInlineMarkdown(text: string): MdSeg[] {
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) segs.push({ text: text.slice(last, m.index) });
     const tok = m[0];
-    if (tok.startsWith("`")) segs.push({ text: tok.slice(1, -1), color: "#FFE0C2" });
+    if (tok.startsWith("`")) segs.push({ text: tok.slice(1, -1), color: theme?.accent ?? "#FFE0C2" });
     else if (tok.startsWith("**") || tok.startsWith("__")) segs.push({ text: tok.slice(2, -2), bold: true });
     else if (tok.startsWith("[")) {
       const link = /^\[([^\]]+)\]\(([^)]+)\)$/u.exec(tok);
-      segs.push({ text: link ? link[1] : tok, color: "#FFE0C2", underline: true, url: link ? link[2] : undefined });
+      segs.push({ text: link ? link[1] : tok, color: theme?.accent ?? "#FFE0C2", underline: true, url: link ? link[2] : undefined });
     } else segs.push({ text: tok.slice(1, -1), italic: true });
     last = re.lastIndex;
   }
@@ -155,7 +156,7 @@ export function tableToSegLines(rows: string[][], width: number): MdSeg[][] {
   return out;
 }
 
-export function markdownToSegLines(text: string, width: number): MdSeg[][] {
+export function markdownToSegLines(text: string, width: number, theme?: ThemeColors): MdSeg[][] {
   const out: MdSeg[][] = [];
   let inFence = false;
   const normalized = text
@@ -166,8 +167,8 @@ export function markdownToSegLines(text: string, width: number): MdSeg[][] {
     const raw = rawLines[lineIndex];
     if (/^\s*```/u.test(raw)) { inFence = !inFence; continue; }
     if (inFence) {
-      const gutter: MdSeg = { text: "  │ ", color: "gray", dim: true };
-      const wrapped = wrapSegments([{ text: raw || " ", color: "#FFE0C2", dim: true }], width - 4);
+      const gutter: MdSeg = { text: "  │ ", color: theme?.textDim ?? "gray", dim: false };
+      const wrapped = wrapSegments([{ text: raw || " ", color: theme?.accent ?? "#FFE0C2", dim: true }], width - 4);
       for (const ln of wrapped) out.push([gutter, ...ln]);
       continue;
     }
@@ -179,32 +180,32 @@ export function markdownToSegLines(text: string, width: number): MdSeg[][] {
     }
     if (raw.trim() === "") { out.push([]); continue; }
     if (/^\s*([-*_])(\s*\1){2,}\s*$/u.test(raw)) {
-      out.push([{ text: "─".repeat(Math.max(3, width - 1)), color: "gray", dim: true }]);
+      out.push([{ text: "─".repeat(Math.max(3, width - 1)), color: theme?.textDim ?? "gray", dim: false }]);
       continue;
     }
     const heading = /^(#{1,6})\s+(.*)$/u.exec(raw);
     if (heading) {
-      const color = heading[1].length <= 2 ? "#FFE0C2" : "white";
-      const segs = parseInlineMarkdown(heading[2]).map((s) => ({ ...s, bold: true, color }));
+      const color = heading[1].length <= 2 ? theme?.accent ?? "#FFE0C2" : theme?.text ?? "white";
+      const segs = parseInlineMarkdown(heading[2], theme).map((s) => ({ ...s, bold: true, color }));
       for (const ln of wrapSegments(segs, width)) out.push(ln);
       continue;
     }
     const quote = /^\s*>\s?(.*)$/u.exec(raw);
     if (quote) {
-      const segs = parseInlineMarkdown(quote[1]).map((s) => ({ ...s, dim: true }));
-      for (const ln of wrapSegments(segs, width - 2)) out.push([{ text: "│ ", color: "gray", dim: true }, ...ln]);
+      const segs = parseInlineMarkdown(quote[1], theme).map((s) => ({ ...s, dim: true }));
+      for (const ln of wrapSegments(segs, width - 2)) out.push([{ text: "│ ", color: theme?.textDim ?? "gray", dim: false }, ...ln]);
       continue;
     }
     const list = /^(\s*)(?:[-*+]|(\d+)[.)])\s+(.*)$/u.exec(raw);
     if (list) {
       const marker = list[2] ? `${list[2]}. ` : "• ";
       const prefix = list[1] + marker;
-      const segs = parseInlineMarkdown(list[3]);
+      const segs = parseInlineMarkdown(list[3], theme);
       const wrapped = wrapSegments(segs, Math.max(10, width - prefix.length));
-      wrapped.forEach((ln, i) => out.push([{ text: i === 0 ? prefix : " ".repeat(prefix.length), color: "#FFE0C2" }, ...ln]));
+      wrapped.forEach((ln, i) => out.push([{ text: i === 0 ? prefix : " ".repeat(prefix.length), color: theme?.accent ?? "#FFE0C2" }, ...ln]));
       continue;
     }
-    for (const ln of wrapSegments(parseInlineMarkdown(raw), width)) out.push(ln);
+    for (const ln of wrapSegments(parseInlineMarkdown(raw, theme), width)) out.push(ln);
   }
   return out;
 }

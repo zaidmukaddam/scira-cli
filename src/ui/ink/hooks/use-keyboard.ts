@@ -2,7 +2,20 @@ import React, { useRef } from "react";
 import { useInput } from "ink";
 import { type Screen, type ApprovalPending } from "../types.js";
 import { type RunState } from "../../../types/index.js";
+import { COMMANDS_NEEDING_ARGS } from "../constants.js";
 import { type Menu } from "./use-settings.js";
+
+function completeCommandWithArgSuffix(
+  selected: string,
+  inputText: string,
+  acceptActiveSuggestion: (value: string) => void,
+): boolean {
+  if (COMMANDS_NEEDING_ARGS.has(selected) && inputText.trim() === selected) {
+    acceptActiveSuggestion(`${selected} `);
+    return true;
+  }
+  return false;
+}
 
 export type KeyboardInputOptions = {
   text: string;
@@ -24,6 +37,11 @@ export type KeyboardDialogOptions = {
   setHelpOpen: React.Dispatch<React.SetStateAction<boolean>>;
   mcpOpen: boolean;
   setMcpOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  mcpRowIdx: number;
+  setMcpRowIdx: React.Dispatch<React.SetStateAction<number>>;
+  mcpRowCount: number;
+  toggleMcpRow: (idx: number) => void;
+  removeMcpRow: (idx: number) => void;
 };
 
 export type KeyboardSuggestionOptions = {
@@ -81,7 +99,10 @@ type InkKey = Parameters<Parameters<typeof useInput>[0]>[1];
 export function useKeyboard(o: KeyboardOptions): void {
   const { screen, setNotice, exit } = o;
   const { text: inputText, setText: setInputText, cursorPos, setCursorPos, history: inputHistory, historyIndex, setHistoryIndex } = o.input;
-  const { approvalPending, setApprovalPending, menu, setMenu, applyMenuSelection, helpOpen, setHelpOpen, mcpOpen, setMcpOpen } = o.dialogs;
+  const {
+    approvalPending, setApprovalPending, menu, setMenu, applyMenuSelection, helpOpen, setHelpOpen,
+    mcpOpen, setMcpOpen, mcpRowIdx, setMcpRowIdx, mcpRowCount, toggleMcpRow, removeMcpRow,
+  } = o.dialogs;
   const { activeSuggestions, activeSuggestionKind, commandMenuIndex, setCommandMenuIndex, acceptActiveSuggestion } = o.suggestions;
   const { setScrollOffset, contentRows, maxScrollOffset, pendingRerun, setPendingRerun, busy, stopTurn, submitChat, toggleAllGroups, toggleFocusedGroup, focusPrevGroup, focusNextGroup, unfocusGroup, hasFocusedGroup } = o.chat;
   const { sessionsModalOpen, setSessionsModalOpen, sessionsModalIdx, setSessionsModalIdx, sessions, deleteSession, selectedIdx, setSelectedIdx, setHeroHidden, openRun, submitHome } = o.home;
@@ -185,7 +206,11 @@ export function useKeyboard(o: KeyboardOptions): void {
       return;
     }
     if (mcpOpen) {
-      if (key.escape || key.return || char === "q") setMcpOpen(false);
+      if (key.escape || char === "q") { setMcpOpen(false); return; }
+      if (key.upArrow) { setMcpRowIdx((i) => Math.max(0, i - 1)); return; }
+      if (key.downArrow) { setMcpRowIdx((i) => Math.min(mcpRowCount - 1, i + 1)); return; }
+      if (char === " " || key.return) { toggleMcpRow(mcpRowIdx); return; }
+      if (char === "x" || char === "X") { removeMcpRow(mcpRowIdx); return; }
       return;
     }
     if (screen === "chat" && busy && key.escape) {
@@ -271,7 +296,9 @@ export function useKeyboard(o: KeyboardOptions): void {
       else if (key.downArrow && !activeSuggestions.length) setSelectedIdx((i) => Math.min(maxHomeIdx, i + 1));
       else if (key.return) {
         if (activeSuggestions.length > 0 && activeSuggestionKind === "command" && inputText.trim().startsWith("/")) {
-          void submitHome(activeSuggestions[Math.min(commandMenuIndex, activeSuggestions.length - 1)] ?? inputText);
+          const selected = activeSuggestions[Math.min(commandMenuIndex, activeSuggestions.length - 1)] ?? inputText;
+          if (completeCommandWithArgSuffix(selected, inputText, acceptActiveSuggestion)) return;
+          void submitHome(selected);
         } else if (activeSuggestions.length > 0 && activeSuggestionKind === "file") {
           acceptActiveSuggestion(activeSuggestions[Math.min(commandMenuIndex, activeSuggestions.length - 1)] ?? inputText);
         } else if (activeSuggestions.length > 0 && activeSuggestionKind === "session") {
@@ -301,7 +328,9 @@ export function useKeyboard(o: KeyboardOptions): void {
       if (key.escape && !inputText && hasFocusedGroup) { unfocusGroup(); return; }
       if (key.return) {
         if (activeSuggestions.length > 0 && activeSuggestionKind === "command" && inputText.trim().startsWith("/")) {
-          submitChat(activeSuggestions[Math.min(commandMenuIndex, activeSuggestions.length - 1)] ?? inputText);
+          const selected = activeSuggestions[Math.min(commandMenuIndex, activeSuggestions.length - 1)] ?? inputText;
+          if (completeCommandWithArgSuffix(selected, inputText, acceptActiveSuggestion)) return;
+          submitChat(selected);
         } else if (activeSuggestions.length > 0 && activeSuggestionKind === "file") {
           acceptActiveSuggestion(activeSuggestions[Math.min(commandMenuIndex, activeSuggestions.length - 1)] ?? inputText);
         } else if (activeSuggestions.length > 0 && activeSuggestionKind === "session") {

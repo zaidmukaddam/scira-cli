@@ -1,13 +1,15 @@
 import React, { useCallback, useRef, useState } from "react";
 
+export type ClickHandler = (x: number) => void;
+
 export function useMouse(onWheel?: (dir: 1 | -1) => void): {
-  clickMapRef: React.RefObject<Map<number, () => void>>;
+  clickMapRef: React.RefObject<Map<number, ClickHandler>>;
   hoverMapRef: React.RefObject<Map<number, number>>;
   hoveredIdx: number | null;
   setHoveredIdx: React.Dispatch<React.SetStateAction<number | null>>;
   handleMouseData: (data: Buffer) => void;
 } {
-  const clickMapRef = useRef<Map<number, () => void>>(new Map());
+  const clickMapRef = useRef<Map<number, ClickHandler>>(new Map());
   const hoverMapRef = useRef<Map<number, number>>(new Map());
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const onWheelRef = useRef(onWheel);
@@ -30,7 +32,7 @@ export function useMouse(onWheel?: (dir: 1 | -1) => void): {
     }
     if (m[4] !== "M" || (code & 3) !== 0) return; // left button press only
     const action = clickMapRef.current.get(y);
-    if (action) action();
+    if (action) action(Number(m[2]));
   }, []);
 
   return { clickMapRef, hoverMapRef, hoveredIdx, setHoveredIdx, handleMouseData };

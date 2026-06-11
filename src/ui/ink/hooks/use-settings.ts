@@ -8,6 +8,7 @@ import { LLM_PROVIDERS, LLM_PROVIDER_LABELS, defaultModelFor, type LlmProvider }
 import { type Screen, type FeedItem } from "../types.js";
 import { PROVIDERS } from "../constants.js";
 import { prettifyModelId } from "../lib/utils.js";
+import { detectTerminalTheme } from "../theme.js";
 import { useMountEffect } from "../components/effects.js";
 
 export type Menu = { type: "model" | "provider" | "llm"; items: string[]; index: number; loading?: boolean; query: string };
@@ -150,6 +151,20 @@ export function useSettings({ config, setConfig, screen, pushFeed, setNotice }: 
       if (!isManagedEnvKey(name)) return `Unknown key "${name}". Managed keys: ${MANAGED_ENV_KEYS.join(", ")}`;
       await setEnvKey(name, value);
       return `${name} saved to ~/.scira/.env and active for this session.`;
+    }
+    if (cmd === "/theme") {
+      if (!arg) {
+        const resolved = config.theme === "auto" ? detectTerminalTheme() : config.theme;
+        const mode = config.theme === "auto"
+          ? "follows terminal picker"
+          : "locked — run /theme auto to sync with picker";
+        return `Current theme: ${config.theme} (rendering ${resolved})\n${mode}\nOptions: dark, light, auto`;
+      }
+      if (!["dark", "light", "auto"].includes(arg)) return `Unknown theme "${arg}". Options: dark, light, auto`;
+      const next = { ...config, theme: arg as "dark" | "light" | "auto" };
+      setConfig(next);
+      await saveGlobalConfig(next);
+      return `Theme set to ${arg}.`;
     }
     if (cmd === "/keys") {
       return detectEnv(config.search.provider, config.llmProvider)

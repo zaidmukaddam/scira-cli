@@ -14,12 +14,19 @@ export function useFeed(): {
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const feedRef = useRef<FeedItem[]>([]);
 
-  const pushFeed = useCallback((item: FeedItem) => {
-    setFeed((f) => { const next = [...f, item]; feedRef.current = next; return next; });
+  /** Keep feedRef in sync immediately so convo.json saves never read stale React state. */
+  const applyFeed = useCallback((update: (current: FeedItem[]) => FeedItem[]) => {
+    const next = update(feedRef.current);
+    feedRef.current = next;
+    setFeed(next);
   }, []);
 
+  const pushFeed = useCallback((item: FeedItem) => {
+    applyFeed((f) => [...f, item]);
+  }, [applyFeed]);
+
   const appendText = useCallback((delta: string) => {
-    setFeed((f) => {
+    applyFeed((f) => {
       const next = [...f];
       const last = next.at(-1);
       if (last?.kind === "text") {
@@ -27,13 +34,12 @@ export function useFeed(): {
       } else {
         next.push({ kind: "text", text: delta });
       }
-      feedRef.current = next;
       return next;
     });
-  }, []);
+  }, [applyFeed]);
 
   const appendReasoning = useCallback((delta: string) => {
-    setFeed((f) => {
+    applyFeed((f) => {
       const next = [...f];
       const last = next.at(-1);
       if (last?.kind === "reasoning" && last.durationMs === undefined) {
@@ -41,13 +47,12 @@ export function useFeed(): {
       } else {
         next.push({ kind: "reasoning", text: delta, startedAt: Date.now() });
       }
-      feedRef.current = next;
       return next;
     });
-  }, []);
+  }, [applyFeed]);
 
   const finishReasoning = useCallback(() => {
-    setFeed((f) => {
+    applyFeed((f) => {
       let changed = false;
       const ended = Date.now();
       const next = f.map((it) => {
@@ -58,26 +63,23 @@ export function useFeed(): {
         }
         return it;
       });
-      if (!changed) return f;
-      feedRef.current = next;
-      return next;
+      return changed ? next : f;
     });
-  }, []);
+  }, [applyFeed]);
 
   const markToolDone = useCallback((toolCallId: string, status: "done" | "error", result?: string) => {
-    setFeed((f) => {
+    applyFeed((f) => {
       const next = [...f];
       for (let i = next.length - 1; i >= 0; i--) {
         const item = next[i];
         if (item.kind === "tool" && item.status === "running" && (item.toolCallId === toolCallId || !toolCallId)) {
-          next[i] = { ...item, status, result };
+          next[i] = { ...item, status, result: result ?? item.result };
           break;
         }
       }
-      feedRef.current = next;
       return next;
     });
-  }, []);
+  }, [applyFeed]);
 
   return { feed, setFeed, feedRef, pushFeed, appendText, appendReasoning, finishReasoning, markToolDone };
 }
