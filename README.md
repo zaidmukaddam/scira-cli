@@ -5,7 +5,7 @@ Terminal-native AI research and coding agent. Ask a question, get a grounded rep
 ## Install
 
 ```bash
-npm install -g scira
+npm install -g @scira/cli
 ```
 
 Requires **Node.js ≥ 20**. Run the interactive setup:
