@@ -58,6 +58,34 @@ export const TOOL_ICONS: Record<string, string> = {
 
 export const SPINNER_FRAMES = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"] as const;
 
+export const LOADING_PHRASES = [
+  "Thinking it through…",
+  "Digging into it…",
+  "Connecting the dots…",
+  "Gathering context…",
+  "Working through it…",
+  "Sifting the details…",
+  "Putting it together…",
+  "Chasing down answers…",
+  "Mulling it over…",
+  "Lining things up…",
+  "Reading the room…",
+  "Scanning the sources…",
+  "Cross-checking facts…",
+  "Tracing the threads…",
+  "Weighing the options…",
+  "Following the trail…",
+  "Piecing it together…",
+  "Untangling the details…",
+  "Skimming the fine print…",
+  "Joining the dots…",
+  "Hunting for specifics…",
+  "Sorting signal from noise…",
+  "Drafting the answer…",
+  "Double-checking the work…",
+  "Wrapping my head around it…",
+] as const;
+
 export const HOME_TIPS = [
   "Type a question and press ⏎ to start a new research run.",
   "Say \"deep research …\" or \"compare …\" to trigger the full research harness.",

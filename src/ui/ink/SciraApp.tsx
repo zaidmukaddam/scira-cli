@@ -1,8 +1,8 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { Box, useApp, useStdout, useStdin } from "ink";
+import { Box, Text, useApp, useStdout, useStdin } from "ink";
 import { SciraConfig, RunState } from "../../types/index.js";
 import { type Screen, type ModelUsage, type TurnUsage, type ApprovalPending, type LinkPending } from "./types.js";
-import { CHAT_COMMANDS, MENU_VISIBLE } from "./constants.js";
+import { CHAT_COMMANDS, MENU_VISIBLE, SPINNER_FRAMES, LOADING_PHRASES } from "./constants.js";
 import { CWD_DISPLAY, wrapText, wrapInputWithCursor, loadInputHistory, saveInputHistory, linkAtMouseColumn, openExternalUrl } from "./lib/utils.js";
 import { deleteRun } from "../../storage/run-store.js";
 import { saveGlobalConfig } from "../../config/load-config.js";
@@ -379,7 +379,7 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
 
 
   const hasRunningTool = feed.some((it) => it.kind === "tool" && it.status === "running");
-  const { lines: feedLines, toggleAtLine, groupToggleAtLine, linkAtLine } = useFeedLines(
+  const { lines: feedLines, toggleAtLine, groupToggleAtLine, linkAtLine, lastUserLineStart } = useFeedLines(
     feed, innerWidth, reasoningTick, hasRunningTool ? frame : 0,
     collapsedGroups, focusedGroupKey, itemExpandState, hoveredIdx, config,
   );
@@ -387,8 +387,20 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
   const contentRows = Math.max(1, feedRows);
   const maxScrollOffset = Math.max(0, feedLines.length - contentRows);
   wheelStateRef.current = { screen, maxScrollOffset };
-  const clampedOffset = Math.min(scrollOffset, maxScrollOffset);
-  const startIdx = Math.max(0, feedLines.length - contentRows - clampedOffset);
+  // scrollOffset < 0 is a sentinel meaning "pin the most recent user message to
+  // the top of the viewport" (with empty space below for the incoming reply).
+  // Once the reply grows past the viewport we fall back to bottom-anchoring so
+  // the streaming output stays visible. Any manual scroll clears the sentinel.
+  const pinUserToTop = scrollOffset < 0 && lastUserLineStart >= 0;
+  let startIdx: number;
+  if (pinUserToTop) {
+    const fitsBelow = feedLines.length - lastUserLineStart <= contentRows;
+    startIdx = fitsBelow ? lastUserLineStart : Math.max(0, feedLines.length - contentRows);
+  } else {
+    const off = Math.min(Math.max(0, scrollOffset), maxScrollOffset);
+    startIdx = Math.max(0, feedLines.length - contentRows - off);
+  }
+  const clampedOffset = Math.max(0, feedLines.length - contentRows - startIdx);
 
   const hasLinkHover = hoveredIdx !== null && (linkAtLine.get(hoveredIdx)?.length ?? 0) > 0;
 
@@ -419,7 +431,35 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
     hoverMapRef.current = hoverMap;
   }
 
-  const visibleLines = feedLines.slice(startIdx, startIdx + contentRows);
+  const slicedLines = feedLines.slice(startIdx, startIdx + contentRows);
+  // The feed box is bottom-aligned (justifyContent="flex-end"). When pinning the
+  // user message to the top, pad blank lines below it so short content is pushed
+  // up — the user message sits at the top with empty room below for the reply.
+  const blankLine = (k: string) => <Text key={k}> </Text>;
+  // Show an animated loading line whenever the agent is still doing non-text
+  // work (reasoning, tool calls, status) — i.e. the latest feed item isn't the
+  // streamed answer text. It stays pinned below the latest content for the whole
+  // turn, and the phrase rotates slowly so it doesn't feel frozen. The feed box
+  // is bottom-aligned with overflow hidden, so when the timeline is long the
+  // loader stays visible and the oldest lines scroll off the top instead.
+  const lastItem = feed[feed.length - 1];
+  const showLoader = busy && lastItem !== undefined && lastItem.kind !== "text";
+  const phrase = LOADING_PHRASES[Math.floor(frame / 24) % LOADING_PHRASES.length];
+  const loadingLine = (
+    <Text key="loading" dimColor>
+      {`${SPINNER_FRAMES[frame % SPINNER_FRAMES.length]} ${phrase}`}
+    </Text>
+  );
+  const contentWithLoader = showLoader
+    ? (slicedLines.length > 0 ? [...slicedLines, blankLine("loading-gap"), loadingLine] : [loadingLine])
+    : slicedLines;
+  const visibleLines = pinUserToTop && contentWithLoader.length < contentRows
+    ? [
+        blankLine("pad-top"),
+        ...contentWithLoader,
+        ...Array.from({ length: Math.max(0, contentRows - contentWithLoader.length - 1) }, (_, i) => blankLine(`pad-${i}`)),
+      ]
+    : contentWithLoader;
   const scrollLabel = clampedOffset > 0
     ? (startIdx > 0 ? `↑ ${startIdx} · ↓ ${clampedOffset} · wheel/⇞⇟` : `top · ↓ ${clampedOffset} · wheel/⇞⇟`)
     : "";

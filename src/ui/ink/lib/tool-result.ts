@@ -31,6 +31,9 @@ export function isCollapsibleToolName(name: string): boolean {
 }
 
 export function defaultCollapsedToolName(name: string): boolean {
+  // Chrome DevTools MCP tools (prefixed `devtools_`) produce long browser
+  // snapshots/output, so collapse them by default like the built-in tools.
+  if (name.startsWith("devtools_")) return true;
   return DEFAULT_COLLAPSED_TOOLS.has(name);
 }
 

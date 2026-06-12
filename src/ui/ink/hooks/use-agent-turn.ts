@@ -58,7 +58,9 @@ export function useAgentTurn({
     const controller = new AbortController();
     session.abort = controller;
     setBusy(true);
-    setScrollOffset(0);
+    // Pin the just-sent user message to the top of the viewport, leaving room
+    // below for the incoming assistant reply (-1 sentinel; see SciraApp).
+    setScrollOffset(-1);
     sessionSetBusy(runPath, true);
     const modelId = config.model;
     const turnStartedAt = Date.now();

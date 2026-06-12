@@ -77,6 +77,8 @@ export type FeedLinesResult = {
   toggleAtLine: Map<number, string>;
   groupToggleAtLine: Map<number, number>;
   linkAtLine: Map<number, LineLink[]>;
+  /** Line index where the most recent user message begins, or -1 if none. */
+  lastUserLineStart: number;
 };
 
 export function useFeedLines(
@@ -98,6 +100,7 @@ export function useFeedLines(
     const toggleAtLine = new Map<number, string>();
     const groupToggleAtLine = new Map<number, number>();
     const linkAtLine = new Map<number, LineLink[]>();
+    let lastUserLineStart = -1;
     let key = 0;
     const { groupOf, groups } = computeGroups(feed);
 
@@ -250,6 +253,7 @@ export function useFeedLines(
         const rightPad = time ? time.length + 1 : 0;
         const wrapped = wrapText(fi.text, Math.max(10, bandW - 4 - rightPad));
         const blank = " ".repeat(bandW);
+        lastUserLineStart = lines.length;
         lines.push(<Text key={key++} {...bandBg}>{blank}</Text>);
         wrapped.forEach((l, idx) => {
           const isFirst = idx === 0;
@@ -309,7 +313,7 @@ export function useFeedLines(
       }
     });
 
-    return { lines, toggleAtLine, groupToggleAtLine, linkAtLine };
+    return { lines, toggleAtLine, groupToggleAtLine, linkAtLine, lastUserLineStart };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feed, innerWidth, reasoningTick, spinnerFrame, collapsedGroups, focusedGroupKey, itemExpandState, hoveredLineIdx, config, theme]);
 }
