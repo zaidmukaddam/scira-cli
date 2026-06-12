@@ -1,6 +1,6 @@
 # Scira CLI
 
-![Scira CLI](./docs/cli-demo.png)
+![Scira CLI](./docs/public/cli-demo.png)
 
 Terminal-native AI research and coding agent. Ask a question, get a grounded report with cited sources and verified claims — all stored locally and inspectable.
 
