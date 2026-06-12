@@ -9,7 +9,7 @@ export default defineConfig({
     },
     coverage: {
       provider: "v8",
-      include: ["src/storage/**", "src/agent/tools.ts", "src/types/**"],
+      include: ["src/storage/**", "src/tools/**", "src/types/**"],
     },
   },
 });

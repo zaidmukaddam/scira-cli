@@ -1,0 +1,84 @@
+---
+title: API keys
+description: Where to get credentials and how Scira loads them.
+---
+
+Scira needs credentials for an **LLM provider** (model calls) and a **search provider** (web search). Required keys depend on your `llmProvider` and `search.provider` in config.
+
+## Where keys are saved
+
+Scira loads keys in this order (highest priority first):
+
+1. **Shell environment** — variables already exported in your terminal
+2. **`<project>/.scira/.env`** — when you run Scira from that project directory
+3. **`~/.scira/.env`** — global defaults from any directory
+
+```bash
+# Interactive wizard (saves to ~/.scira/.env)
+scira init
+
+# Manual — global
+mkdir -p ~/.scira && cp .env.example ~/.scira/.env
+
+# Manual — project only
+mkdir -p .scira && cp .env.example .scira/.env
+
+scira doctor
+scira keys
+```
+
+<Callout title="Project vs global">
+  If keys work in development but not after `bun link`, they may be in the wrong file. Use `~/.scira/.env` for global installs, or `.scira/.env` in the repo when running from that project root.
+</Callout>
+
+## LLM providers
+
+Set one provider via `scira init` or `/llm` in the TUI.
+
+| Key | Provider | Where to get it |
+| --- | --- | --- |
+| `AI_GATEWAY_API_KEY` | Vercel AI Gateway (default) | [vercel.com/docs/ai-gateway](https://vercel.com/docs/ai-gateway) → dashboard → AI Gateway → API Keys |
+| `XAI_API_KEY` | xAI (Grok) | [console.x.ai](https://console.x.ai/) → API Keys |
+| `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` | Cloudflare Workers AI | [dash.cloudflare.com](https://dash.cloudflare.com/) + [API Tokens](https://dash.cloudflare.com/profile/api-tokens) with Workers AI permission |
+| `HF_API_KEY` | Hugging Face Inference | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) |
+
+### Vercel AI Gateway
+
+1. Sign in at [vercel.com](https://vercel.com).
+2. Open your team dashboard → **AI Gateway** → **API Keys**.
+3. Create a key (starts with `sk-`) and set `AI_GATEWAY_API_KEY`.
+
+### xAI (Grok)
+
+1. Create an account at [console.x.ai](https://console.x.ai/).
+2. Open **API Keys** and create a key.
+3. Set `XAI_API_KEY`.
+
+`XAI_API_KEY` also enables the **`xSearch` tool** — when the key is present the agent can search X (formerly Twitter) for real-time posts alongside regular web search. You do not need to set xAI as your LLM provider to use xSearch; the key is all that is required.
+
+### Cloudflare Workers AI
+
+1. Copy your **Account ID** from the Cloudflare dashboard sidebar.
+2. Create an API token with the **Edit Cloudflare Workers AI** template.
+3. Set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`.
+
+## Search providers
+
+Set one provider via `scira init` or `/provider` in the TUI.
+
+| Key | Provider | Where to get it |
+| --- | --- | --- |
+| `EXA_API_KEY` | Exa (default) | [dashboard.exa.ai/api-keys](https://dashboard.exa.ai/api-keys) |
+| `FIRECRAWL_API_KEY` | Firecrawl | [firecrawl.dev/app/api-keys](https://www.firecrawl.dev/app/api-keys) |
+| `PARALLEL_API_KEY` | Parallel | [platform.parallel.ai](https://platform.parallel.ai/) |
+
+`FIRECRAWL_API_KEY` is also used as an automatic fallback when Exa or Parallel search fails, so it is worth setting even if Firecrawl is not your primary provider.
+
+## Saving keys in the TUI
+
+```text
+/key EXA_API_KEY your-key-here
+/keys
+```
+
+Keys saved with `/key` go to `~/.scira/.env` and apply immediately for the current session.

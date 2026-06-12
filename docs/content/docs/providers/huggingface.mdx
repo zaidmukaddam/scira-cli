@@ -1,0 +1,73 @@
+---
+title: Hugging Face
+description: Route to 15+ inference providers through a single HF token.
+---
+
+Scira uses the [Hugging Face Inference Providers Router](https://huggingface.co/docs/inference-providers/index) at `router.huggingface.co/v1` — an OpenAI-compatible endpoint that routes requests to 15+ third-party inference providers (DeepInfra, Groq, Fireworks, Together, Nebius, SambaNova, and more). Your HF access token is the only credential you need; the router handles provider selection.
+
+## Get a token
+
+<Steps>
+
+<Step>
+
+### Create a Hugging Face account
+
+Go to [huggingface.co](https://huggingface.co) and sign up. A free account works.
+
+</Step>
+
+<Step>
+
+### Create an access token
+
+Open **Settings → Access Tokens → Create new token**. Select a token with at least **Read** permissions. Copy the token — it starts with `hf_`.
+
+</Step>
+
+<Step>
+
+### Add it to Scira
+
+```bash
+scira init
+# or manually:
+echo "HF_API_KEY=hf_..." >> ~/.scira/.env
+```
+
+</Step>
+
+</Steps>
+
+## Configure
+
+```json title="~/.scira/config.json"
+{
+  "llmProvider": "huggingface",
+  "model": "meta-llama/Llama-3.3-70B-Instruct"
+}
+```
+
+Switch to HuggingFace from the TUI with `/llm` → **HuggingFace**.
+
+## Available models
+
+The `/model` picker fetches the live list from `router.huggingface.co/v1/models` and filters to models where at least one provider reports `supports_tools: true`. Fallback static list:
+
+| Model ID | Notes |
+| --- | --- |
+| `meta-llama/Llama-3.3-70B-Instruct` | **Default.** Strong general instruction model with tool use |
+| `meta-llama/Llama-3.1-70B-Instruct` | Previous Llama 3.1 70B |
+| `Qwen/Qwen2.5-72B-Instruct` | Alibaba's 72B — strong on code and reasoning |
+| `mistralai/Mistral-7B-Instruct-v0.3` | Compact 7B, low cost |
+| `deepseek-ai/DeepSeek-V3` | DeepSeek V3 via the router |
+
+Use the exact `owner/model-name` format as it appears on the Hugging Face model page. The router automatically selects the fastest available inference provider for the model; you can force a specific one by appending `:provider` (e.g. `meta-llama/Llama-3.3-70B-Instruct:groq`).
+
+<Callout title="How the router picks a provider">
+  By default the router selects the fastest available backend. Append `:cheapest` to a model ID to prefer the lowest-cost provider instead, or configure your preferred provider order in your HF account settings and use `:preferred`.
+</Callout>
+
+## Pricing
+
+Inference via the router is billed by the underlying provider at their standard rates. Costs vary by model and provider. Check [huggingface.co/inference/models](https://huggingface.co/inference/models) for current provider availability and pricing per model.

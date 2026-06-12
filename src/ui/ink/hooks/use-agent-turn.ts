@@ -1,8 +1,10 @@
 import React, { useCallback, useRef } from "react";
 import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { SciraConfig } from "../../../types/index.js";
-import { createResearchAgent, createOneShotAgent } from "../../../agent/research-agent.js";
+import { createResearchAgent, createOneShotAgent, type AgentOptions } from "../../../agent/research-agent.js";
+import { createBackgroundTaskManager, type BackgroundTaskManager } from "../../../tools/background-tasks.js";
+import { resolveProjectRoot } from "../../../tools/workspace.js";
 import { generateWithGateway } from "../../../providers/llm/gateway.js";
 import { setRunTitle, summarizeRun } from "../../../storage/run-store.js";
 import { type FeedItem, type TurnUsage } from "../types.js";
@@ -22,6 +24,7 @@ type AgentTurnOptions = {
   currentRunPath: string | undefined;
   queuedPromptRef: React.RefObject<string | null>;
   fullModeRef: React.RefObject<boolean>;
+  planModeRef: React.RefObject<boolean>;
   conversationRef: React.RefObject<{ role: "user" | "assistant"; content: string }[]>;
   turnsRef: React.RefObject<TurnUsage[]>;
   feedRef: React.RefObject<FeedItem[]>;
@@ -30,19 +33,23 @@ type AgentTurnOptions = {
   refreshRun: () => Promise<void>;
   recordUsage: (model: string, u: { inputTokens?: number; outputTokens?: number; totalTokens?: number }) => void;
   setMode: (full: boolean) => void;
+  setPlanMode: (active: boolean) => void;
   getSubscriber: () => SessionSubscriber;
 };
 
 export function useAgentTurn({
-  config, currentRunPath, queuedPromptRef, fullModeRef, conversationRef, turnsRef, feedRef,
-  setBusy, setScrollOffset, refreshRun, recordUsage, setMode, getSubscriber,
+  config, currentRunPath, queuedPromptRef, fullModeRef, planModeRef, conversationRef, turnsRef, feedRef,
+  setBusy, setScrollOffset, refreshRun, recordUsage, setMode, setPlanMode, getSubscriber,
 }: AgentTurnOptions): {
   runTurn: (prompt: string) => Promise<void>;
   runTurnRef: React.RefObject<(prompt: string) => Promise<void>>;
 } {
+  const bgManagersRef = useRef(new Map<string, BackgroundTaskManager>());
+
   const runTurn = useCallback(async (prompt: string) => {
     const runPath = currentRunPath;
     if (!runPath) return;
+    const workspacePath = resolveProjectRoot(runPath);
     const existing = getSession(runPath);
     if (existing?.busy) return;
     const session = createSession(runPath);
@@ -141,14 +148,26 @@ export function useAgentTurn({
       let finalText = "";
 
       if (!fullModeRef.current && wantsFullResearch(prompt)) {
+        setPlanMode(false);
         setMode(true);
         fullModeRef.current = true;
         sessionNotifyModeChange(runPath, true);
         sessionPushFeed(runPath, { kind: "status", text: "Detected a research request — switching to the full research harness." });
       }
 
+      let bgManager = bgManagersRef.current.get(runPath);
+      if (!bgManager) {
+        bgManager = createBackgroundTaskManager(runPath, workspacePath);
+        bgManagersRef.current.set(runPath, bgManager);
+      }
+      const agentOptions: AgentOptions = {
+        workspacePath,
+        getPlanMode: () => planModeRef.current && !fullModeRef.current,
+        backgroundTasks: bgManager
+      };
+
       if (fullModeRef.current) {
-        const bundle = await createResearchAgent(runPath, summary.goal, config, onApprovalRequired);
+        const bundle = await createResearchAgent(runPath, summary.goal, config, onApprovalRequired, agentOptions);
         try {
           finalText = await consume(await bundle.agent.stream({ messages, abortSignal: controller.signal, experimental_transform: markdownJoinerTransform() }));
         } finally {
@@ -156,13 +175,14 @@ export function useAgentTurn({
         }
       } else {
         const escalate = { requested: false };
-        const oneShot = await createOneShotAgent(runPath, summary.goal, config, onApprovalRequired, () => { escalate.requested = true; });
+        const oneShot = await createOneShotAgent(runPath, summary.goal, config, onApprovalRequired, () => { escalate.requested = true; }, agentOptions);
         try {
           finalText = await consume(await oneShot.agent.stream({ messages, abortSignal: controller.signal, experimental_transform: markdownJoinerTransform() }));
         } finally {
           await oneShot.close();
         }
         if (escalate.requested && !controller.signal.aborted) {
+          setPlanMode(false);
           setMode(true);
           fullModeRef.current = true;
           sessionNotifyEscalate(runPath);
@@ -173,7 +193,10 @@ export function useAgentTurn({
             { role: "assistant" as const, content: finalText },
             { role: "user" as const, content: "Approved. Now run the full research harness: discover skills, write plan.md, gather and read grounded sources, extract and verify claims, write sources.jsonl and a complete report.md, then give a short summary." }
           ];
-          const full = await createResearchAgent(runPath, summary.goal, config, onApprovalRequired);
+          const full = await createResearchAgent(runPath, summary.goal, config, onApprovalRequired, {
+            ...agentOptions,
+            getPlanMode: () => false
+          });
           try {
             finalText = await consume(await full.agent.stream({ messages, abortSignal: controller.signal, experimental_transform: markdownJoinerTransform() }));
           } finally {
@@ -223,7 +246,7 @@ export function useAgentTurn({
         void runTurnRef.current(queued);
       }
     }
-  }, [config, currentRunPath, refreshRun, recordUsage, setMode, getSubscriber]);
+  }, [config, currentRunPath, refreshRun, recordUsage, setMode, setPlanMode, getSubscriber, fullModeRef, planModeRef]);
 
   const runTurnRef = useRef(runTurn);
   runTurnRef.current = runTurn;

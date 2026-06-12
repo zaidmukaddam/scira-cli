@@ -1,0 +1,72 @@
+---
+title: Providers overview
+description: How Scira routes LLM calls and web search — and how to switch providers.
+---
+
+Scira uses two independent provider slots: one for **LLM calls** (the reasoning model that runs the research agent) and one for **web search** (what it searches with). You configure them separately, and each has its own key.
+
+## LLM providers
+
+| Provider | Key(s) | Default model |
+| --- | --- | --- |
+| `gateway` (default) | `AI_GATEWAY_API_KEY` | `deepseek/deepseek-v4-flash` |
+| `xai` | `XAI_API_KEY` | `grok-build-0.1` (coding agent model) |
+| `workers-ai` | `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` | `@cf/moonshotai/kimi-k2.6` |
+| `huggingface` | `HF_API_KEY` | `meta-llama/Llama-3.3-70B-Instruct` |
+
+Each provider page in this section covers credentials, available models, and how to configure it. Start with [Vercel AI Gateway](./gateway) — it gives access to the widest model selection with a single key.
+
+## Search providers
+
+| Provider | Key | Notes |
+| --- | --- | --- |
+| `exa` (default) | `EXA_API_KEY` | Neural search, high quality |
+| `firecrawl` | `FIRECRAWL_API_KEY` | Crawl + search; doubles as automatic fallback |
+| `parallel` | `PARALLEL_API_KEY` | Structured parallel search with advanced mode |
+
+`FIRECRAWL_API_KEY` is worth setting even if Firecrawl is not your primary provider. When Exa or Parallel returns poor results, Scira falls back to Firecrawl automatically.
+
+## Switching providers
+
+The fastest path is the interactive wizard:
+
+```bash
+scira init
+```
+
+From inside the TUI:
+
+```text
+/llm           # pick LLM provider + model
+/provider      # pick search provider
+/model         # change model within the current LLM provider
+/key NAME val  # set a single key immediately
+```
+
+Or edit your config directly:
+
+```json title="~/.scira/config.json"
+{
+  "llmProvider": "xai",
+  "model": "grok-4"
+}
+```
+
+Changes take effect on the next run. Running `/llm` or `/provider` in the TUI applies the change immediately without restarting.
+
+## Model picker
+
+The `/model` command opens an interactive picker. For Vercel AI Gateway, it fetches the live model list from the gateway and filters to models that support tool use. For xAI and Cloudflare, it calls the provider's models API and falls back to a curated static list when keys are absent.
+
+## Credential precedence
+
+Keys are loaded in this order — first match wins:
+
+1. Variables already exported in your shell
+2. `<project>/.scira/.env` when running from that directory
+3. `~/.scira/.env` global defaults
+
+```bash
+scira doctor   # shows which keys are present and from where
+scira keys     # shows key status for the current config
+```

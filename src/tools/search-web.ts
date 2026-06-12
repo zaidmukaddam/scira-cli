@@ -169,8 +169,12 @@ const STRATEGIES: Record<Provider, (query: string, config: SciraConfig, opts?: Q
 export type MultiSearchResult = {
   query: string;
   results: SearchResult[];
+  error?: string;
 };
 
+function formatSearchError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export async function multiSearchWeb(
   queries: string[],
@@ -184,21 +188,35 @@ export async function multiSearchWeb(
     queries.map((q, i) => strategy(q, config, perQuery[i] ?? {}))
   );
 
-  const searches: MultiSearchResult[] = await Promise.all(
+  return Promise.all(
     settled.map(async (res, i) => {
+      let error: string | undefined;
+      if (res.status === "rejected") {
+        error = formatSearchError(res.reason);
+      }
+
       if (res.status === "fulfilled" && res.value.length > 0) {
         return { query: queries[i], results: res.value };
       }
-      // per-query fallback to Firecrawl
+
       if (provider !== "firecrawl" && hasEnv("FIRECRAWL_API_KEY")) {
         try {
           const fallback = await firecrawlSearch(queries[i], config, perQuery[i] ?? {});
-          return { query: queries[i], results: fallback };
-        } catch { /* ignore */ }
+          if (fallback.length > 0) {
+            return { query: queries[i], results: fallback };
+          }
+          if (!error) error = "primary search returned no results; firecrawl fallback also returned no results";
+        } catch (fallbackError) {
+          const fallbackMsg = formatSearchError(fallbackError);
+          error = error ? `${error}; firecrawl fallback failed: ${fallbackMsg}` : `firecrawl fallback failed: ${fallbackMsg}`;
+        }
+      } else if (res.status === "rejected" && provider !== "firecrawl" && !hasEnv("FIRECRAWL_API_KEY")) {
+        error = `${error} (set FIRECRAWL_API_KEY for automatic fallback)`;
+      } else if (res.status === "fulfilled" && res.value.length === 0) {
+        error = error ?? "search returned no results";
       }
-      return { query: queries[i], results: [] };
+
+      return { query: queries[i], results: [], ...(error ? { error } : {}) };
     })
   );
-
-  return searches;
 }

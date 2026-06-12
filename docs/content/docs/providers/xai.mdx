@@ -1,0 +1,75 @@
+---
+title: xAI (Grok)
+description: Use xAI's Grok models directly for research and agentic code tasks.
+---
+
+xAI's Grok family covers general reasoning, specialized coding, and dedicated agentic workflows. The default model, `grok-build-0.1`, is a coding-agent model with a 256k context window trained specifically for agentic tasks — a strong fit for Scira's combined research and code mode.
+
+## Get a key
+
+<Steps>
+
+<Step>
+
+### Create an xAI account
+
+Go to [console.x.ai](https://console.x.ai/) and sign up. API access requires a paid plan.
+
+</Step>
+
+<Step>
+
+### Open API Keys
+
+In the xAI console sidebar, click **API Keys** → **Create API Key**. Copy the key — it starts with `xai-`.
+
+</Step>
+
+<Step>
+
+### Add the key to Scira
+
+```bash
+scira init
+# or manually:
+echo "XAI_API_KEY=xai-..." >> ~/.scira/.env
+```
+
+</Step>
+
+</Steps>
+
+## Configure
+
+```json title="~/.scira/config.json"
+{
+  "llmProvider": "xai",
+  "model": "grok-build-0.1"
+}
+```
+
+Switch from the TUI with `/llm` → **xAI**, then `/model` to pick a different model.
+
+## Available models
+
+The `/model` picker fetches the live list from `api.x.ai/v1/models`. Fallback static list:
+
+| Model ID | Description |
+| --- | --- |
+| `grok-build-0.1` | **Default.** Specialized coding-agent model with 256k context, designed for agentic workflows |
+| `grok-4.3` | Current general flagship — highest intelligence, full tool use |
+| `grok-4.20` | High-performance variant — lowest hallucination rate and fast agentic tool calling |
+| `grok-4.20-reasoning` | Reasoning-mode variant of Grok 4.20 |
+| `grok-4-0709` | Specific dated release of Grok 4 |
+| `grok-3` | Previous generation general model |
+| `grok-3-mini` | Smaller, faster, lower cost |
+
+All Grok models support function calling. See [docs.x.ai/developers/models](https://docs.x.ai/developers/models) for the full current list.
+
+<Callout title="Grok via AI Gateway">
+  If you already have a Vercel AI Gateway key, you can also run Grok through the `gateway` provider using model IDs like `xai/grok-4.3` — no separate `XAI_API_KEY` needed.
+</Callout>
+
+## Pricing
+
+See [console.x.ai](https://console.x.ai/) for current per-token rates. Grok Build 0.1 and Grok 3 Mini are the most cost-effective options for high-volume research runs.

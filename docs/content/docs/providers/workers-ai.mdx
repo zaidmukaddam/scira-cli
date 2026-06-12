@@ -1,0 +1,70 @@
+---
+title: Cloudflare Workers AI
+description: Run frontier open-weight models on Cloudflare's global GPU fleet.
+---
+
+Cloudflare Workers AI runs open-weight models on Cloudflare's edge infrastructure. It requires two credentials: a **account ID** and an **API token** with Workers AI permissions. Scira's `/model` picker filters to models that declare `function_calling: true` in the Cloudflare catalog — required for the agent loop to work.
+
+## Get credentials
+
+<Steps>
+
+<Step>
+
+### Find your account ID
+
+Sign in to [dash.cloudflare.com](https://dash.cloudflare.com). On the **Workers & Pages** overview page, your Account ID is in the right-hand sidebar — a 32-character hex string.
+
+</Step>
+
+<Step>
+
+### Create an API token
+
+Go to **My Profile → API Tokens → Create Token**. Use the **Edit Cloudflare Workers AI** template (or a custom token with `Workers AI: Read` permission). Click **Create Token** and copy it.
+
+</Step>
+
+<Step>
+
+### Add both to Scira
+
+```bash
+scira init
+# or manually:
+echo "CLOUDFLARE_ACCOUNT_ID=your-account-id" >> ~/.scira/.env
+echo "CLOUDFLARE_API_TOKEN=your-token"       >> ~/.scira/.env
+```
+
+</Step>
+
+</Steps>
+
+## Configure
+
+```json title="~/.scira/config.json"
+{
+  "llmProvider": "workers-ai",
+  "model": "@cf/moonshotai/kimi-k2.6"
+}
+```
+
+Switch to Workers AI from the TUI with `/llm` → **Cloudflare Workers AI**.
+
+## Available models
+
+The `/model` picker fetches the live model list and filters to function-calling capable models. Current confirmed models with tool use:
+
+| Model ID | Description |
+| --- | --- |
+| `@cf/moonshotai/kimi-k2.6` | **Default.** 1T-parameter frontier model, 262k context, multi-turn tool calling |
+| `@cf/zai-org/glm-4.7-flash` | Fast multilingual model, 131k context, multi-turn tool calling |
+| `@cf/ibm-granite/granite-4.0-h-micro` | IBM Granite 4.0, strong on instruction following and agentic tasks |
+| `@cf/qwen/qwq-32b` | Qwen reasoning model, 32B parameters |
+| `@cf/openai/gpt-oss-120b` | OpenAI open-weight model, 120B, reasoning and agentic tasks |
+
+The full catalog with capability tags is at [developers.cloudflare.com/workers-ai/models](https://developers.cloudflare.com/workers-ai/models/). Filter by **Function Calling** to see the current full list.
+
+## Pricing
+
+Workers AI has a free tier (10,000 neurons/day). See [developers.cloudflare.com/workers-ai/platform/pricing](https://developers.cloudflare.com/workers-ai/platform/pricing) for current limits and paid plan rates.

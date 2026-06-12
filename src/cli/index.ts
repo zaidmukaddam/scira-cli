@@ -8,7 +8,6 @@ if (typeof Bun === "undefined") {
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import sade from "sade";
 
@@ -16,13 +15,10 @@ const { version: pkgVersion } = JSON.parse(
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../package.json"), "utf8")
 ) as { version: string };
 
-// Load keys from the global config dir (~/.scira/.env) so they work regardless
-// of where the CLI is invoked from (e.g. after pnpm link / global install).
-try {
-  process.loadEnvFile(join(homedir(), ".scira", ".env"));
-} catch {
-  // no ~/.scira/.env present; rely on the ambient environment
-}
+import { loadSciraEnv } from "../config/env-store.js";
+
+// Shell env wins, then ~/.scira/.env, then <cwd>/.scira/.env (project overrides global).
+loadSciraEnv(process.cwd());
 
 import { loadConfig } from "../config/load-config.js";
 import { createRun, findRun, listRuns, summarizeRun, verificationReport, getRunPaths } from "../storage/run-store.js";
@@ -32,6 +28,7 @@ import { runResearchAgent } from "../agent/research-agent.js";
 import { openShell } from "./shell/shell.js";
 import { openTui, openTuiHome } from "./shell/tui.js";
 import { detectEnv } from "../providers/llm/readiness.js";
+import { envFileSetupInstructions, formatMissingKeysHelp } from "../config/env-guide.js";
 import { requireLlmKeys } from "../providers/llm/registry.js";
 import { listModels } from "../providers/llm/models.js";
 import { listGatewayModels } from "../providers/llm/gateway.js";
@@ -59,9 +56,7 @@ prog
     requireLlmKeys(config);
     const run = await createRun(question, config);
     console.log(`Run: ${run.path}`);
-    if (opts.workspace) {
-      console.log(`Workspace: ${opts.workspace}`);
-    }
+    if (opts.workspace) console.log(`Workspace: ${opts.workspace}`);
     console.log("");
     await runResearchAgent(run.path, question, config, opts.workspace);
     console.log(`\nRun complete: ${run.path}`);
@@ -417,13 +412,35 @@ prog
     const missingRequired = checks.filter((c) => c.required && !c.present);
     const blockers: string[] = [];
     if (!nodeCheck.ok) blockers.push(`upgrade Node to >=${nodeCheck.required}`);
-    if (missingRequired.length > 0) blockers.push(`set ${missingRequired.map((c) => c.name).join(", ")} in ~/.scira/.env`);
+    if (missingRequired.length > 0) {
+      blockers.push(`set ${missingRequired.map((c) => c.name).join(", ")} in ~/.scira/.env or .scira/.env in your project`);
+    }
     console.log("");
     if (blockers.length > 0) {
       console.log(`Action needed: ${blockers.join("; ")} to enable research runs.`);
-      console.log(`  Tip: cp .env.example ~/.scira/.env  then fill in your keys.`);
+      console.log("");
+      const help = formatMissingKeysHelp(checks);
+      if (help) console.log(help);
     } else {
       console.log("All required credentials present. Ready to run.");
+    }
+  });
+
+prog
+  .command("keys", "show how to get and set API keys")
+  .action(async () => {
+    const config = await loadConfig();
+    const checks = detectEnv(config.search.provider, config.llmProvider);
+    console.log(`LLM provider: ${config.llmProvider}`);
+    console.log(`Search provider: ${config.search.provider}`);
+    console.log("");
+    const help = formatMissingKeysHelp(checks);
+    if (help) {
+      console.log(help);
+    } else {
+      console.log("All required keys for your current config are set.");
+      console.log("");
+      console.log(envFileSetupInstructions());
     }
   });
 

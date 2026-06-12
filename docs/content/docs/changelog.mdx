@@ -1,0 +1,96 @@
+---
+title: Changelog
+description: What's new in each release of Scira.
+---
+
+Every release of Scira. Versions follow semantic versioning and publish to npm as [`@scira/cli`](https://www.npmjs.com/package/@scira/cli).
+
+<Steps>
+
+<Step>
+
+### 0.1.3 — Unreleased
+
+<Callout title="Unreleased">
+  In development — the version is bumped but not yet published. The latest version on npm is 0.1.2.
+</Callout>
+
+**X search**
+
+- **`xSearch` tool** — search X (formerly Twitter) for real-time posts using the xAI Grok responses API with native `xSearch` tool support. Returns up to 30 posts per query with full tweet text and author handles hydrated via `react-tweet`. Use it for breaking news, public reactions, and social discussions alongside `webSearch`.
+- Requires `XAI_API_KEY`. When the key is set the tool is automatically available to the agent; when absent it is omitted from the toolset entirely so the model is never offered a tool it cannot use.
+- Supports date ranges, up to 5 parallel queries, and per-query handle allow/block lists.
+- xSearch calls are logged to the run audit log alongside all other tool calls.
+
+**Code agent**
+
+- **Plan mode** — explore and plan before making changes. Read-only commands run freely; writes, edits, and other side effects wait for approval. Toggle it with `/plan`.
+- **Dedicated tool sets** — research, one-shot, and coding tools are split out, so the agent gets the right toolbox for the task.
+- **Workspace tools** — `grep` and list files across your project, with separate path handling for run artifacts and project files.
+- **Background tasks** — long-running commands can run in the background instead of blocking the turn.
+- **Todos** — a tool for tracking multi-step work within a run.
+
+**Setup & keys**
+
+- **Guided key setup** — `scira keys` now shows per-provider signup links and exactly where to save each key.
+
+**Internal**
+
+- Agent tools moved from `src/agent/` into `src/tools/` and split by capability.
+- Added a bash approval policy and broader test coverage.
+
+</Step>
+
+<Step>
+
+### 0.1.2 — June 11, 2026
+
+_Latest published._
+
+- Improved CLI commands across `init`, `doctor`, and run handling.
+- Enhanced TUI theme support: dark, light, and auto, following your terminal, with `/theme` to override.
+- Dependency updates.
+
+</Step>
+
+<Step>
+
+### 0.1.1 — June 11, 2026
+
+- Renamed the package to `@scira/cli`.
+- Migrated the build and CI from npm to Bun.
+
+</Step>
+
+<Step>
+
+### 0.1.0 — June 11, 2026
+
+_Initial public release._
+
+**Research**
+
+- Grounded web search through Exa, Parallel, or Firecrawl, with full-page reading via `readUrl`.
+- Claim extraction and verification — every factual statement is tied to a source URL and a status.
+- Markdown reports with inline citations, written to `.scira/runs/<id>/report.md`.
+
+**Code**
+
+- Workspace tools: `readFile`, `writeFile`, `editFile`, and `bash`.
+- Approval modes — manual, suggest, or auto — so nothing runs without your say-so.
+
+**Interface**
+
+- Interactive Ink TUI with session history, slash commands, `@` file mentions, and collapsible tool output.
+- Headless mode: `scira "question"` writes a report and exits.
+
+**Providers & extensions**
+
+- Model providers: Vercel AI Gateway, xAI, Cloudflare Workers AI, and Hugging Face.
+- MCP support, including built-in Chrome DevTools for live page research.
+
+</Step>
+
+</Steps>
+
+Found a regression or want something on the roadmap? [Open an issue](https://github.com/zaidmukaddam/scira-cli/issues).

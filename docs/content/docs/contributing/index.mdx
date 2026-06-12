@@ -1,0 +1,140 @@
+---
+title: Contributing
+description: Set up a development environment and send a pull request to Scira.
+---
+
+Contributions are welcome. This guide covers everything from cloning the repo to opening a PR.
+
+## Prerequisites
+
+- **Bun** ≥ 1.2 — [bun.sh](https://bun.sh) (used for everything: install, test, build, run)
+- **Node.js** ≥ 20 — required as a runtime peer for some dependencies
+- **Git** — to clone and branch
+
+Verify your setup:
+
+```bash
+❯ bun --version  # 1.2+
+❯ node --version # 20+
+```
+
+## Clone and install
+
+```bash
+❯ git clone https://github.com/zaidmukaddam/scira-cli.git
+❯ cd scira-cli
+❯ bun install
+```
+
+## Set up credentials
+
+The CLI needs at least one LLM key and one search key to run. Copy the example env file and fill in what you have:
+
+```bash
+❯ cp .env.example .scira/.env
+❯ $EDITOR .scira/.env
+```
+
+Verify everything is detected:
+
+```bash
+❯ bun run dev -- doctor
+```
+
+## Run in development
+
+```bash
+❯ bun run dev          # start the TUI in watch mode
+❯ bun run dev -- init  # run a CLI command in dev mode
+❯ bun run dev -- "what is a Merkle tree?"
+```
+
+`bun run dev` runs the CLI directly from `src/` via `tsx` — no build step needed. Changes to any source file reload automatically.
+
+## Build
+
+```bash
+❯ bun run build   # compiles to dist/
+❯ bun link        # registers scira globally so you can call it as `scira`
+```
+
+## Run tests
+
+```bash
+❯ bun test                         # run all tests once
+❯ bun test --watch                 # watch mode
+❯ bun test src/tools/workspace     # run a specific file or directory
+```
+
+Tests use Vitest (configured in `vitest.config.ts`). No mocks hit the real network — anything that calls an external service is integration-tested via recorded fixtures or needs credentials in `.scira/.env`.
+
+## Project structure
+
+```
+src/
+├── agent/
+│   └── research-agent.ts   # main agent loop (tool calls, turn management)
+├── cli/
+│   ├── index.ts             # CLI entry point (command definitions)
+│   └── commands/            # one file per CLI command
+├── config/
+│   ├── env-store.ts         # reads ~/.scira/.env and .scira/.env
+│   └── env-guide.ts         # per-key signup links and descriptions
+├── tools/
+│   ├── search-web.ts        # Exa / Parallel / Firecrawl adapters
+│   ├── file-tools.ts        # readUrl, writeFile, readFile
+│   ├── workspace.ts         # run directory management
+│   ├── todos.ts             # plan.md / claims.jsonl helpers
+│   └── agent-tools.ts       # tool definitions exposed to the agent
+└── ui/
+    └── ink/
+        ├── SciraApp.tsx      # root TUI component
+        ├── hooks/            # useAgentTurn, useSession, useSubmit, …
+        ├── components/       # overlays, spinners, source list
+        └── theme.ts          # theme tokens and dark/light logic
+docs/                         # this Next.js documentation site
+```
+
+## Code style
+
+- **TypeScript** throughout — no `any` unless genuinely unavoidable
+- **Prettier** for formatting (run `bun run format` before committing)
+- **ESLint** for linting (run `bun run lint`)
+- Prefer `async/await` over `.then()` chains
+- Keep tool adapters stateless — they receive config, call a network API, return structured data
+
+## Areas that need help
+
+If you're looking for somewhere to start, these are the most useful contributions:
+
+- **Search provider adapters** — new backends for `src/tools/search-web.ts` (see the banned list below before you start)
+- **Export formats** — PDF, HTML, or Obsidian-flavored markdown in the `scira export` command
+- **TUI improvements** — keyboard shortcuts, better source display, inline diff for claims
+- **Test coverage** — `src/tools/` is well-covered; `src/agent/` and `src/cli/commands/` need more tests
+- **Windows support** — the TUI currently assumes a POSIX terminal; PRs that improve Windows compatibility are appreciated
+- **Documentation** — typos, missing examples, unclear descriptions
+
+<Callout type="warn" title="Banned search providers">
+  Scira does not accept adapters for **Tavily**, **Brave Search**, or **Perplexity**. PRs adding them will be closed. Stick to the supported backends — Exa, Parallel, and Firecrawl — or open an issue to discuss a new one first.
+</Callout>
+
+## Opening a pull request
+
+1. Fork the repo and create a branch: `git checkout -b feat/my-change`
+2. Make your changes, write or update tests, and confirm `bun test` passes
+3. Run `bun run lint` and `bun run format`
+4. Push and open a PR against `main`
+5. Describe what changed and why — link to any relevant issues
+
+<Callout title="Keep PRs focused">
+  One logical change per PR makes review faster and merge conflicts rarer. If you're fixing a bug and also want to refactor something nearby, split them.
+</Callout>
+
+## Reporting issues
+
+Open an issue at [github.com/zaidmukaddam/scira-cli/issues](https://github.com/zaidmukaddam/scira-cli/issues). Include:
+
+- Scira version (`scira --version`)
+- Operating system and shell
+- The exact command or TUI action that triggered the problem
+- Any error output (from `~/.scira/logs/` if available)

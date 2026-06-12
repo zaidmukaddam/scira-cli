@@ -1,0 +1,16 @@
+{
+  "title": "Scira",
+  "pages": [
+    "index",
+    "installation",
+    "api-keys",
+    "configuration",
+    "commands",
+    "tui",
+    "runs",
+    "providers",
+    "architecture",
+    "contributing",
+    "changelog"
+  ]
+}

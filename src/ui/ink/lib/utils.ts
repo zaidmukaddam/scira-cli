@@ -215,8 +215,13 @@ function toolOutputText(output: unknown): string {
 
 export function summarizeToolInput(name: string, input: unknown): string {
   const obj = (input ?? {}) as Record<string, unknown>;
-  if (name === "bash" || name === "runWorkspaceCommand") return String(obj.command ?? "");
-  if (name === "webSearch") {
+  if (name === "bash" || name === "runBash" || name === "runWorkspaceCommand") {
+    const action = obj.action;
+    if (action && action !== "run") return `${action}${obj.taskId ? ` ${obj.taskId}` : ""}`;
+    return String(obj.command ?? "");
+  }
+  if (name === "todo") return `${String(obj.action ?? "list")}${obj.id ? ` ${obj.id}` : ""}`;
+  if (name === "webSearch" || name === "xSearch") {
     const queries = Array.isArray(obj.queries) ? (obj.queries as string[]) : [];
     return queries.length > 0 ? queries.slice(0, 2).join(" · ") + (queries.length > 2 ? ` +${queries.length - 2}` : "") : String(obj.query ?? "");
   }
@@ -252,6 +257,24 @@ export function summarizeToolOutput(name: string, output: unknown): string {
     } catch { /* fall through */ }
   }
 
+  if (name === "xSearch") {
+    try {
+      const parsed = JSON.parse(text) as Array<{ posts?: Array<{ handle?: string }> }>;
+      if (Array.isArray(parsed)) {
+        const posts = parsed.flatMap((s) => s.posts ?? []);
+        const total = posts.length;
+        if (total === 0) return "no posts";
+        const handles = posts
+          .map((p) => p.handle)
+          .filter((h): h is string => Boolean(h))
+          .slice(0, 3)
+          .map((h) => `@${h}`);
+        const head = `${total} post${total === 1 ? "" : "s"}`;
+        return handles.length > 0 ? `${head} · ${handles.join(", ")}` : head;
+      }
+    } catch { /* fall through */ }
+  }
+
   if (name === "readUrl") {
     const titleMatch = text.match(/^#\s+(.+)/m);
     if (titleMatch?.[1]) return titleMatch[1].trim();
@@ -277,10 +300,21 @@ export function summarizeToolOutput(name: string, output: unknown): string {
     return oneLine(text, 120) || "ok";
   }
 
-  if (name === "bash" || name === "runWorkspaceCommand") {
+  if (name === "bash" || name === "runBash" || name === "runWorkspaceCommand") {
+    if (text.startsWith("Started background task")) return oneLine(text, 120);
+    if (text.startsWith("No background tasks") || text.includes("[running]") || text.includes("[exited]")) {
+      return oneLine(text.split("\n")[0] ?? text, 120);
+    }
     const lines = text.split("\n").filter((l) => l.trim());
     if (lines.length === 0) return "done";
     return lines.slice(-3).map((l) => oneLine(l, 80)).join(" · ").slice(0, 200);
+  }
+
+  if (name === "todo") {
+    const lines = text.split("\n").filter((l) => l.trim());
+    if (lines.length === 0) return "no todos";
+    const active = lines.filter((l) => l.includes("[ ]") || l.includes("[~]")).length;
+    return `${lines.length} todo${lines.length === 1 ? "" : "s"}${active > 0 ? ` · ${active} open` : ""}`;
   }
 
   if (name === "listWorkspaceDir") {

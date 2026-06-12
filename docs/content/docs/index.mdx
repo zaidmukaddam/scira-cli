@@ -1,0 +1,55 @@
+---
+title: Introduction
+description: Terminal-native AI research agent with grounded sources and verified claims.
+---
+
+Scira is a terminal-native AI research and coding agent. Ask a question and get a report with cited sources and verified claims, all stored locally under `.scira/runs/`. It also reads, edits, and runs code in your project, and asks before it changes anything.
+
+![Scira research session with web search and cited sources](/cli-demo.png)
+
+## What you get
+
+- **Grounded research** — web search via Exa, Parallel, or Firecrawl before generating a single sentence
+- **Verified claims** — every factual statement traced to a source URL you can open
+- **Local runs** — every run writes `plan.md`, `sources.jsonl`, `claims.jsonl`, and `report.md` you can inspect
+- **Interactive TUI** — Ink-based terminal UI with session history, tool output, and slash commands
+- **Headless mode** — pipe a question in, get a report out, no interaction needed
+- **MCP support** — plug in Exa, Chrome DevTools, and custom MCP servers
+- **Any model** — Vercel AI Gateway, xAI (Grok), Cloudflare Workers AI, or Hugging Face
+- **Plan-then-execute** — agent writes a research plan before gathering sources; inspect or edit it at any time
+
+## How it works
+
+<Steps>
+<Step>
+**Plan** — Scira reads your question and writes a `plan.md` with specific research questions and a search strategy.
+</Step>
+<Step>
+**Gather** — `webSearch` queries your chosen search provider. `readUrl` fetches and extracts the content of each page. Raw content is saved to `snapshots/`.
+</Step>
+<Step>
+**Claims** — factual statements are extracted and written to `claims.jsonl` with citation status and a source URL.
+</Step>
+<Step>
+**Report** — Scira synthesizes a structured `report.md` with inline citations. Every claim links back to a source you can verify.
+</Step>
+</Steps>
+
+## Quick start
+
+```bash
+❯ npm install -g @scira/cli
+❯ scira init
+❯ scira doctor
+❯ scira
+```
+
+<Cards>
+  <Card title="Installation" href="/docs/installation" description="Install Scira and verify your environment." />
+  <Card title="API keys" href="/docs/api-keys" description="Get and save LLM and search provider credentials." />
+  <Card title="Commands" href="/docs/commands" description="Full CLI and TUI command reference." />
+  <Card title="The TUI" href="/docs/tui" description="The interactive interface — input, mentions, and keyboard control." />
+  <Card title="Configuration" href="/docs/configuration" description="Global and project config, providers, and MCP servers." />
+  <Card title="Run directory" href="/docs/runs" description="What Scira writes to disk and how to inspect it." />
+  <Card title="Contributing" href="/docs/contributing" description="Set up a dev environment and send a pull request." />
+</Cards>

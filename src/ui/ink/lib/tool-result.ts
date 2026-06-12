@@ -4,7 +4,9 @@ import { markdownToSegLines } from "./markdown.js";
 import { wrapText } from "./utils.js";
 
 type SearchHit = { title?: string; url?: string; snippet?: string; publishedDate?: string };
-type SearchGroup = { query?: string; results?: SearchHit[] };
+type SearchGroup = { query?: string; results?: SearchHit[]; error?: string };
+type XPost = { url: string; id?: string; handle?: string; text?: string };
+type XPostGroup = { query?: string; dateRange?: string; posts?: XPost[]; error?: string };
 
 /** Tools that start collapsed in the timeline (long output). */
 export const DEFAULT_COLLAPSED_TOOLS = new Set([
@@ -14,7 +16,9 @@ export const DEFAULT_COLLAPSED_TOOLS = new Set([
   "readSkill",
   "bash",
   "runWorkspaceCommand",
+  "todo",
   "grepWorkspace",
+  "xSearch",
 ]);
 
 export function feedToolItemId(feedIndex: number, toolCallId?: string): string {
@@ -96,8 +100,15 @@ function searchHitToMarkdown(hit: SearchHit): string {
 
 function webSearchQueriesMarkdown(groups: SearchGroup[]): string {
   const queries = groups.map((g) => g.query?.trim()).filter((q): q is string => Boolean(q));
-  if (queries.length === 0) return "";
-  return `## Queries\n\n${queries.map((q, i) => `${i + 1}. ${q}`).join("\n")}`;
+  const errors = groups.map((g) => g.error?.trim()).filter((e): e is string => Boolean(e));
+  const parts: string[] = [];
+  if (queries.length > 0) {
+    parts.push(`## Queries\n\n${queries.map((q, i) => `${i + 1}. ${q}`).join("\n")}`);
+  }
+  if (errors.length > 0) {
+    parts.push(`## Errors\n\n${errors.map((e, i) => `${i + 1}. ${e}`).join("\n")}`);
+  }
+  return parts.join("\n\n");
 }
 
 function webSearchSourcesMarkdown(hits: SearchHit[]): string {
@@ -217,6 +228,50 @@ function formatGrep(result: string, width: number, theme: ThemeColors): MdSeg[][
   });
 }
 
+function xPostToMarkdown(p: XPost): string {
+  const label = p.handle ? `@${p.handle}` : p.url;
+  let line = `- [${label}](${p.url})`;
+  if (p.text) {
+    const snippet = p.text.replace(/\s+/gu, " ").trim();
+    if (snippet) line += `\n  *${snippet}*`;
+  }
+  return line;
+}
+
+function xSearchPostsMarkdown(groups: XPostGroup[]): string {
+  const queries = groups.map((g) => g.query?.trim()).filter((q): q is string => Boolean(q));
+  const errors = groups.map((g) => g.error?.trim()).filter((e): e is string => Boolean(e));
+  const allPosts = groups.flatMap((g) => g.posts ?? []);
+  const dateRange = groups[0]?.dateRange;
+  const parts: string[] = [];
+  if (queries.length > 0) {
+    parts.push(`## Queries\n\n${queries.map((q, i) => `${i + 1}. ${q}`).join("\n")}`);
+  }
+  if (dateRange) {
+    parts.push(`*${dateRange}*`);
+  }
+  if (errors.length > 0) {
+    parts.push(`## Errors\n\n${errors.map((e, i) => `${i + 1}. ${e}`).join("\n")}`);
+  }
+  if (allPosts.length > 0) {
+    const postLines = allPosts.map(xPostToMarkdown).join("\n\n");
+    parts.push(`## Posts (${allPosts.length})\n\n${postLines}`);
+  }
+  return parts.join("\n\n");
+}
+
+function formatXSearch(result: string, width: number, theme: ThemeColors): MdSeg[][] {
+  try {
+    const groups = JSON.parse(result) as XPostGroup[];
+    if (!Array.isArray(groups)) return plainLines(result, width, { color: theme.textDim });
+    const md = xSearchPostsMarkdown(groups);
+    if (!md.trim()) return plainLines(result, width, { color: theme.textDim });
+    return markdownToSegLines(md, width, theme);
+  } catch {
+    return plainLines(result, width, { color: theme.textDim });
+  }
+}
+
 function formatBody(
   name: string,
   result: string,
@@ -226,6 +281,8 @@ function formatBody(
   switch (name) {
     case "webSearch":
       return formatWebSearch(result, width, theme);
+    case "xSearch":
+      return formatXSearch(result, width, theme);
     case "readUrl":
       return formatReadUrl(result, width, theme);
     case "listSkills":
@@ -288,6 +345,18 @@ export function formatToolResultPreview(
     } catch { /* fall through */ }
   }
 
+  if (name === "xSearch") {
+    try {
+      const groups = JSON.parse(result) as XPostGroup[];
+      if (Array.isArray(groups)) {
+        const queries = groups.map((g) => g.query?.trim()).filter(Boolean);
+        const total = groups.reduce((n, g) => n + (g.posts?.length ?? 0), 0);
+        const q = queries.length > 0 ? queries.slice(0, 2).join(" · ") + (queries.length > 2 ? ` +${queries.length - 2}` : "") : input;
+        return q ? `${q} · ${total} posts` : `${total} posts`;
+      }
+    } catch { /* fall through */ }
+  }
+
   if (name === "readFile" || name === "readWorkspaceFile") {
     const lines = result.split("\n").length;
     return input ? `${input} · ${lines} lines` : `${lines} lines`;
@@ -317,12 +386,12 @@ export function formatToolResultLines(
   const lines: MdSeg[][] = [];
   const input = inputSummary.replace(/\s+/gu, " ").trim();
 
-  const skipInput = name === "webSearch" && status === "done" && Boolean(result?.trim());
+  const skipInput = (name === "webSearch" || name === "xSearch") && status === "done" && Boolean(result?.trim());
 
   if (input && !skipInput) {
     if (name === "bash" || name === "runWorkspaceCommand") {
       lines.push([seg("$ ", { color: theme.accent }), seg(input, { color: theme.text })]);
-    } else if (name === "webSearch") {
+    } else if (name === "webSearch" || name === "xSearch") {
       lines.push(...markdownToSegLines(webSearchRunningMarkdown(input), width, theme));
     } else if (name === "readUrl") {
       lines.push([seg("url  ", { dim: true, color: theme.textDim }), seg(input, { color: theme.accent, underline: true, url: input })]);

@@ -4,6 +4,7 @@ import { Files, type StoredFile } from "files-sdk";
 import { fs } from "files-sdk/fs";
 import { SciraConfig } from "../types/index.js";
 import { logEvent } from "../storage/run-store.js";
+import { PLAN_MODE_MSG, type GetPlanMode } from "./agent-tools.js";
 
 const MAX_CONTENT = 8000;
 
@@ -28,7 +29,8 @@ type GateCallback = (toolName: string, description: string) => Promise<boolean>;
 export function createFileTools(
   runPath: string,
   config: SciraConfig,
-  onApprovalRequired?: GateCallback
+  onApprovalRequired?: GateCallback,
+  getPlanMode?: GetPlanMode
 ) {
   const dir = config.files!.dir;
   const files = new Files({ adapter: fs({ root: dir }) });
@@ -135,6 +137,7 @@ export function createFileTools(
         destination: z.string().describe("Target file key.")
       }),
       execute: async ({ source, destination }) => {
+        if (getPlanMode?.()) return PLAN_MODE_MSG;
         if (!await gate("moveFile", `Move file:\n  ${source} → ${destination}`)) {
           return "Move rejected by user.";
         }
@@ -151,6 +154,7 @@ export function createFileTools(
         key: z.string().describe("File key to delete.")
       }),
       execute: async ({ key }) => {
+        if (getPlanMode?.()) return PLAN_MODE_MSG;
         if (!await gate("deleteFile", `Delete file: "${key}"`)) {
           return "Delete rejected by user.";
         }

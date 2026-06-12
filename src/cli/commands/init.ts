@@ -5,6 +5,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import * as p from "@clack/prompts";
 import { detectEnv, type SearchProvider } from "../../providers/llm/readiness.js";
+import { ENV_KEY_GUIDES, formatKeyGuide } from "../../config/env-guide.js";
+import type { ManagedEnvKey } from "../../config/env-store.js";
 import { listModels } from "../../providers/llm/models.js";
 import { LLM_PROVIDERS, LLM_PROVIDER_LABELS, defaultModelFor, type LlmProvider } from "../../providers/llm/registry.js";
 import type { SciraConfig } from "../../types/index.js";
@@ -93,15 +95,19 @@ export async function initCommand() {
   }
 
   // Step 2: API Keys based on provider
-  p.note("Scira requires API keys to function. Let's set them up.", "API Keys");
+  p.note(
+    "Scira needs API keys for your LLM and search providers.\nKeys are saved to ~/.scira/.env (or copy .env.example to <project>/.scira/.env).\nRun scira doctor or scira keys anytime to verify.",
+    "API Keys"
+  );
 
   const envKeys: Record<string, string> = { ...existingEnv };
 
   if (llmProvider === "gateway") {
     if (!envKeys.AI_GATEWAY_API_KEY || shouldReconfigure) {
+      p.note(formatKeyGuide("AI_GATEWAY_API_KEY"), "How to get AI_GATEWAY_API_KEY");
       const aiGatewayKey = await p.text({
         message: envKeys.AI_GATEWAY_API_KEY ? "Enter your Vercel AI Gateway API key (current: *****)" : "Enter your Vercel AI Gateway API key",
-        placeholder: "sk-...",
+        placeholder: ENV_KEY_GUIDES.AI_GATEWAY_API_KEY.placeholder,
         defaultValue: envKeys.AI_GATEWAY_API_KEY,
         validate: (value) => {
           if (!value) return "AI Gateway API key is required";
@@ -119,9 +125,10 @@ export async function initCommand() {
     }
   } else if (llmProvider === "xai") {
     if (!envKeys.XAI_API_KEY || shouldReconfigure) {
+      p.note(formatKeyGuide("XAI_API_KEY"), "How to get XAI_API_KEY");
       const xaiKey = await p.text({
         message: envKeys.XAI_API_KEY ? "Enter your xAI API key (current: *****)" : "Enter your xAI API key",
-        placeholder: "sk-...",
+        placeholder: ENV_KEY_GUIDES.XAI_API_KEY.placeholder,
         defaultValue: envKeys.XAI_API_KEY,
         validate: (value) => {
           if (!value) return "xAI API key is required";
@@ -138,6 +145,7 @@ export async function initCommand() {
     }
   } else if (llmProvider === "workers-ai") {
     if (!envKeys.CLOUDFLARE_ACCOUNT_ID || !envKeys.CLOUDFLARE_API_TOKEN || shouldReconfigure) {
+      p.note(formatKeyGuide("CLOUDFLARE_ACCOUNT_ID"), "How to get CLOUDFLARE_ACCOUNT_ID");
       const accountId = await p.text({
         message: envKeys.CLOUDFLARE_ACCOUNT_ID ? "Enter your Cloudflare Account ID (current: *****)" : "Enter your Cloudflare Account ID",
         placeholder: "your-account-id",
@@ -152,9 +160,10 @@ export async function initCommand() {
         process.exit(0);
       }
 
+      p.note(formatKeyGuide("CLOUDFLARE_API_TOKEN"), "How to get CLOUDFLARE_API_TOKEN");
       const apiToken = await p.text({
         message: envKeys.CLOUDFLARE_API_TOKEN ? "Enter your Cloudflare API Token (current: *****)" : "Enter your Cloudflare API Token",
-        placeholder: "your-api-token",
+        placeholder: ENV_KEY_GUIDES.CLOUDFLARE_API_TOKEN.placeholder,
         defaultValue: envKeys.CLOUDFLARE_API_TOKEN,
         validate: (value) => {
           if (!value) return "Cloudflare API Token is required";
@@ -172,9 +181,10 @@ export async function initCommand() {
     }
   } else if (llmProvider === "huggingface") {
     if (!envKeys.HF_API_KEY || shouldReconfigure) {
+      p.note(formatKeyGuide("HF_API_KEY"), "How to get HF_API_KEY");
       const hfKey = await p.text({
         message: envKeys.HF_API_KEY ? "Enter your HuggingFace API key (current: *****)" : "Enter your HuggingFace API key",
-        placeholder: "hf_...",
+        placeholder: ENV_KEY_GUIDES.HF_API_KEY.placeholder,
         defaultValue: envKeys.HF_API_KEY,
         validate: (value) => {
           if (!value) return "HuggingFace API key is required";
@@ -191,7 +201,6 @@ export async function initCommand() {
     }
   }
 
-  // Optional search provider keys
   const searchProvider = await p.select({
     message: "Select search provider",
     options: SEARCH_PROVIDERS.map((provider) => ({
@@ -206,38 +215,52 @@ export async function initCommand() {
     process.exit(0);
   }
 
-  if (searchProvider === "exa") {
-    if (!envKeys.EXA_API_KEY || shouldReconfigure) {
-      const exaKey = await p.text({
-        message: envKeys.EXA_API_KEY ? "Enter your Exa API key (optional, current: *****)" : "Enter your Exa API key (optional, press Enter to skip)",
-        placeholder: "exa_...",
-        defaultValue: envKeys.EXA_API_KEY,
-      });
+  const searchKeyName: ManagedEnvKey = searchProvider === "exa"
+    ? "EXA_API_KEY"
+    : searchProvider === "firecrawl"
+      ? "FIRECRAWL_API_KEY"
+      : "PARALLEL_API_KEY";
 
-      if (p.isCancel(exaKey)) {
-        p.cancel("Setup cancelled.");
-        process.exit(0);
-      }
-      if (exaKey) envKeys.EXA_API_KEY = exaKey;
-    } else {
-      p.log.success("Exa API key already set");
-    }
-  } else if (searchProvider === "firecrawl") {
-    if (!envKeys.FIRECRAWL_API_KEY || shouldReconfigure) {
-      const firecrawlKey = await p.text({
-        message: envKeys.FIRECRAWL_API_KEY ? "Enter your Firecrawl API key (optional, current: *****)" : "Enter your Firecrawl API key (optional, press Enter to skip)",
-        placeholder: "fc-...",
-        defaultValue: envKeys.FIRECRAWL_API_KEY,
-      });
+  if (!envKeys[searchKeyName] || shouldReconfigure) {
+    p.note(formatKeyGuide(searchKeyName), `How to get ${searchKeyName}`);
+    const searchKey = await p.text({
+      message: envKeys[searchKeyName]
+        ? `Enter your ${searchProvider} API key (current: *****)`
+        : `Enter your ${searchProvider} API key (required for ${searchProvider} search)`,
+      placeholder: ENV_KEY_GUIDES[searchKeyName].placeholder,
+      defaultValue: envKeys[searchKeyName],
+      validate: (value) => {
+        if (!value?.trim()) return `${searchKeyName} is required when search.provider is ${searchProvider}`;
+      },
+    });
 
-      if (p.isCancel(firecrawlKey)) {
-        p.cancel("Setup cancelled.");
-        process.exit(0);
-      }
-      if (firecrawlKey) envKeys.FIRECRAWL_API_KEY = firecrawlKey;
-    } else {
-      p.log.success("Firecrawl API key already set");
+    if (p.isCancel(searchKey)) {
+      p.cancel("Setup cancelled.");
+      process.exit(0);
     }
+    envKeys[searchKeyName] = searchKey.trim();
+  } else {
+    p.log.success(`${searchKeyName} already set`);
+  }
+
+  if (searchProvider !== "firecrawl" && (!envKeys.FIRECRAWL_API_KEY || shouldReconfigure)) {
+    p.note(
+      `${formatKeyGuide("FIRECRAWL_API_KEY")}\n\nOptional but recommended: used as automatic fallback if ${searchProvider} search fails.`,
+      "Firecrawl fallback (optional)"
+    );
+    const firecrawlKey = await p.text({
+      message: envKeys.FIRECRAWL_API_KEY
+        ? "Enter your Firecrawl API key for fallback (current: *****, Enter to keep)"
+        : "Enter your Firecrawl API key for fallback (optional, Enter to skip)",
+      placeholder: ENV_KEY_GUIDES.FIRECRAWL_API_KEY.placeholder,
+      defaultValue: envKeys.FIRECRAWL_API_KEY,
+    });
+
+    if (p.isCancel(firecrawlKey)) {
+      p.cancel("Setup cancelled.");
+      process.exit(0);
+    }
+    if (firecrawlKey?.trim()) envKeys.FIRECRAWL_API_KEY = firecrawlKey.trim();
   }
 
   // Write .env file
@@ -395,5 +418,5 @@ export async function initCommand() {
     p.note("Some required credentials are missing. Please run `scira init` again.", "Warning");
   }
 
-  p.outro("Setup complete! Run `scira doctor` to verify your configuration.");
+  p.outro("Setup complete! Run `scira doctor` to verify, or `scira keys` for signup links.");
 }

@@ -13,7 +13,7 @@ export interface ThemeColors {
   text: string;
   textDim: string;
   textInverse: string;
-  /** Typed input foreground — explicit hex for terminal compatibility. */
+  /** Typed input foreground — ansi256 for broad terminal compatibility. */
   inputText: string;
   cursorBackground: string;
   cursorForeground: string;
@@ -29,10 +29,10 @@ export const DARK_THEME: ThemeColors = {
   accentDim: "#CFB59D",
   background: "",
   border: "#FFE0C2",
-  text: "white",
+  text: "ansi256(15)",
   textDim: "ansi256(245)",
-  textInverse: "black",
-  inputText: "#ffffff",
+  textInverse: "ansi256(0)",
+  inputText: "ansi256(15)",
   cursorBackground: "#FFE0C2",
   cursorForeground: "#000000",
   success: "green",
@@ -47,10 +47,10 @@ export const LIGHT_THEME: ThemeColors = {
   accentDim: "#CFB59D",
   background: "",
   border: "#FFE0C2",
-  text: "black",
-  textDim: "gray",
-  textInverse: "white",
-  inputText: "#000000",
+  text: "ansi256(0)",
+  textDim: "ansi256(242)",
+  textInverse: "ansi256(15)",
+  inputText: "ansi256(0)",
   cursorBackground: "#CFB59D",
   cursorForeground: "#000000",
   success: "green",
@@ -81,10 +81,19 @@ function readColorFgbg(): "dark" | "light" | undefined {
 }
 
 function readTerminalProfile(): "dark" | "light" | undefined {
-  const profile = process.env.TERM_PROFILE || process.env.ITERM_PROFILE || "";
+  const profile = process.env.TERM_PROFILE || process.env.ITERM_PROFILE || process.env.WARP_BOOTSTRAPPED || "";
   if (!profile) return undefined;
   if (/light|day|solar/i.test(profile)) return "light";
   if (/dark|night|dim/i.test(profile)) return "dark";
+  return undefined;
+}
+
+/** Common standalone terminals that default to dark profiles when unset. */
+function readTermProgram(): "dark" | "light" | undefined {
+  const program = (process.env.TERM_PROGRAM ?? "").toLowerCase();
+  if (!program) return undefined;
+  if (/warp|ghostty|alacritty|kitty|hyper|wezterm|tabby/.test(program)) return "dark";
+  if (program === "apple_terminal") return "dark";
   return undefined;
 }
 
@@ -157,9 +166,28 @@ function readSystemAppearance(): "dark" | "light" | undefined {
 export function detectTerminalTheme(): "dark" | "light" {
   return readColorFgbg()
     ?? readTerminalProfile()
+    ?? readTermProgram()
     ?? readEditorColorTheme()
     ?? readSystemAppearance()
-    ?? "light";
+    ?? "dark";
+}
+
+/** Input foreground matched to terminal appearance. */
+export function inputForegroundForAppearance(appearance: "dark" | "light"): string {
+  return appearance === "dark" ? "ansi256(15)" : "ansi256(0)";
+}
+
+/**
+ * Pick colors for rendering. When a locked theme disagrees with the terminal
+ * background, follow the terminal so text stays readable.
+ */
+export function resolveRenderingAppearance(
+  configTheme: Theme,
+  terminalAppearance: "dark" | "light",
+): "dark" | "light" {
+  if (configTheme === "auto") return terminalAppearance;
+  if (configTheme !== terminalAppearance) return terminalAppearance;
+  return configTheme;
 }
 
 export function getThemeFromResolved(resolved: "dark" | "light"): ThemeColors {

@@ -1,0 +1,204 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+/* ── Tokens: ink on paper, one signal color (verified green) ───── */
+:root {
+  --paper:     #f4f3ee;
+  --paper-2:   #eceae2;
+  --card:      #fbfaf6;
+  --ink:       #1a1813;
+  --ink-2:     #423f37;
+  --muted:     #6f6c61;
+  --faint:     #9a978b;
+  --rule:      rgba(26, 24, 19, 0.12);
+  --rule-soft: rgba(26, 24, 19, 0.07);
+  --verify:    #a0682f;                       /* caramel — legible cream-family accent on paper */
+  --verify-bg: #ffe0c2;                        /* true CLI cream — chip / badge fill */
+  --mark:      rgba(255, 214, 173, 0.9);       /* cream highlighter */
+  --cream:     #ffe0c2;                        /* CLI accent, for use on dark surfaces */
+  --term-bg:   #16140f;
+  --term-fg:   rgba(244, 243, 238, 0.9);
+  --shadow:    0 1px 2px rgba(26, 24, 19, 0.04), 0 10px 30px rgba(26, 24, 19, 0.07);
+}
+
+.dark {
+  --paper:     #14130f;
+  --paper-2:   #100f0c;
+  --card:      #1b1915;
+  --ink:       #f1efe6;
+  --ink-2:     #c9c6ba;
+  --muted:     #928f84;
+  --faint:     #67645b;
+  --rule:      rgba(241, 239, 230, 0.14);
+  --rule-soft: rgba(241, 239, 230, 0.07);
+  --verify:    #ffe0c2;                        /* true CLI cream — reads beautifully on dark */
+  --verify-bg: rgba(255, 224, 194, 0.13);
+  --mark:      rgba(255, 224, 194, 0.18);
+  --cream:     #ffe0c2;
+  --term-bg:   #0b0a08;
+  --term-fg:   rgba(241, 239, 230, 0.9);
+  --shadow:    0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Brand the fumadocs docs (override the stock neutral preset) ── */
+:root {
+  --color-fd-background: #f4f3ee;
+  --color-fd-foreground: #1a1813;
+  --color-fd-muted: #eceae2;
+  --color-fd-muted-foreground: #6f6c61;
+  --color-fd-border: #e2dfd4;
+  --color-fd-card: #fbfaf6;
+  --color-fd-popover: #fbfaf6;
+  --color-fd-popover-foreground: #1a1813;
+  --color-fd-primary: #9a6328;
+  --color-fd-primary-foreground: #fbfaf6;
+  --color-fd-secondary: #eceae2;
+  --color-fd-accent: #e8e5db;
+  --color-fd-accent-foreground: #1a1813;
+  --color-fd-ring: #9a6328;
+}
+
+.dark {
+  --color-fd-background: #100f0c;
+  --color-fd-foreground: #f1efe6;
+  --color-fd-muted: #1a1917;
+  --color-fd-muted-foreground: #928f84;
+  --color-fd-border: #2a2824;
+  --color-fd-card: #1b1915;
+  --color-fd-popover: #1b1915;
+  --color-fd-popover-foreground: #f1efe6;
+  --color-fd-primary: #ffe0c2;
+  --color-fd-primary-foreground: #161410;
+  --color-fd-secondary: #1f1d19;
+  --color-fd-accent: #211f1a;
+  --color-fd-accent-foreground: #f1efe6;
+  --color-fd-ring: #ffe0c2;
+}
+
+/* Docs headings in the brand display serif */
+#nd-page h1,
+#nd-page h2,
+article h1.text-3xl {
+  font-family: var(--font-display), 'Iowan Old Style', Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.015em;
+}
+
+html { scrollbar-gutter: stable; }
+html > body[data-scroll-locked] {
+  margin-right: 0px !important;
+  --removed-body-scroll-bar-size: 0px !important;
+}
+
+.font-mono {
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.font-serif-d {
+  font-family: var(--font-display), 'Iowan Old Style', Georgia, 'Times New Roman', serif;
+}
+.font-pixel {
+  font-family: var(--font-geist-pixel-square), ui-monospace, monospace;
+}
+
+/* ── Landing shell ─────────────────────────────────────────────── */
+.doc {
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* monospace eyebrow / label */
+.label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* inline citation chip — the signature element */
+.cite {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.62em;
+  font-weight: 500;
+  line-height: 1;
+  vertical-align: super;
+  color: var(--verify);
+  padding: 0.15em 0.3em;
+  margin-left: 0.1em;
+  border-radius: 4px;
+  background: var(--verify-bg);
+  text-decoration: none;
+  transition: background 140ms ease;
+}
+.cite:hover { background: var(--mark); }
+
+/* highlighted (verified) run of prose */
+.mark {
+  background: linear-gradient(transparent 62%, var(--mark) 62%);
+  padding-bottom: 0.05em;
+}
+
+/* link hover helpers (server-component safe) */
+.lnk { color: var(--muted); transition: color 140ms ease, background 140ms ease; }
+.lnk:hover { color: var(--ink); }
+
+/* margin source card */
+.source {
+  border-left: 2px solid var(--verify);
+  padding-left: 0.85rem;
+  transition: border-color 140ms ease;
+}
+
+/* index row underline-on-hover */
+.idx-row {
+  border-top: 1px solid var(--rule);
+  transition: background 140ms ease;
+}
+.idx-row:hover { background: var(--rule-soft); }
+
+/* press feedback */
+.press { transition: transform 140ms cubic-bezier(0.23,1,0.32,1), opacity 140ms ease, background 140ms ease; }
+.press:active { transform: scale(0.97); }
+
+/* warm ambient glow behind the hero terminal — premium, never purple */
+.glow-warm {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 50% at 50% 38%, rgba(255, 224, 194, 0.55), transparent 70%);
+  filter: blur(50px);
+  z-index: 0;
+}
+.dark .glow-warm {
+  background:
+    radial-gradient(60% 50% at 50% 38%, rgba(255, 224, 194, 0.16), transparent 70%);
+}
+
+/* providers — quiet, evenly spaced */
+.providers span { color: var(--faint); transition: color 160ms ease; }
+.providers:hover span { color: var(--muted); }
+
+/* feature column divider only between items on desktop */
+@media (min-width: 768px) {
+  .feat-col + .feat-col { border-left: 1px solid var(--rule); }
+}
+
+/* ── animation ─────────────────────────────────────────────────── */
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+.caret { animation: blink 1.15s ease-in-out infinite; }
+
+@keyframes rise { from{opacity:0; transform:translateY(14px)} to{opacity:1; transform:translateY(0)} }
+.rise > * { opacity: 0; animation: rise 0.6s cubic-bezier(0.23,1,0.32,1) forwards; }
+.rise > *:nth-child(1){ animation-delay: 60ms }
+.rise > *:nth-child(2){ animation-delay: 150ms }
+.rise > *:nth-child(3){ animation-delay: 240ms }
+.rise > *:nth-child(4){ animation-delay: 330ms }
+.rise > *:nth-child(5){ animation-delay: 420ms }
+
+@media (prefers-reduced-motion: reduce) {
+  .rise > * { animation: none; opacity: 1; }
+  .caret { animation: none; }
+}

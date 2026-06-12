@@ -13,6 +13,7 @@ type TopBarProps = {
   screen: Screen;
   runState: RunState | null;
   fullMode: boolean;
+  planMode: boolean;
   activeUsage: ModelUsage | undefined;
   busy: boolean;
   frame: number;
@@ -20,7 +21,7 @@ type TopBarProps = {
   config: SciraConfig;
 };
 
-export function TopBar({ screen, runState, fullMode, activeUsage, busy, frame, cwdDisplay, config }: TopBarProps): React.ReactElement {
+export function TopBar({ screen, runState, fullMode, planMode, activeUsage, busy, frame, cwdDisplay, config }: TopBarProps): React.ReactElement {
   const theme = useTheme();
   return (
     <Box paddingTop={1} justifyContent="space-between">
@@ -33,6 +34,7 @@ export function TopBar({ screen, runState, fullMode, activeUsage, busy, frame, c
         <Box flexShrink={0} gap={1}>
           <Text color={theme.textDim}>{"|"}</Text>
           <Text color={fullMode ? "magenta" : theme.accent}>{fullMode ? "full" : "quick"}</Text>
+          {planMode && <Text color="cyan">plan</Text>}
           {activeUsage && (
             <Text color={theme.textDim}>{`↑${fmtTokens(activeUsage.input)} ↓${fmtTokens(activeUsage.output)}`}</Text>
           )}
@@ -84,19 +86,19 @@ export function InputBar({ inputLines, cursorLine, cursorCol, showCursor, approv
         <Box key={i} width={boxWidth}>
           <Text color={borderColor}>{"│ "}</Text>
           <Text color={i === 0 ? promptColor : borderColor}>{i === 0 ? "❯ " : "  "}</Text>
-          <Text color={inputColor} wrap="truncate">
+          <Box flexGrow={1} minWidth={0}>
             {showCursor && i === cursorLine ? (
-              <>
-                {line.slice(0, cursorCol)}
+              <Text wrap="truncate">
+                <Text color={inputColor}>{line.slice(0, cursorCol)}</Text>
                 <Text backgroundColor={theme.cursorBackground} color={theme.cursorForeground}>
                   {line[cursorCol] ?? " "}
                 </Text>
-                {line.slice(cursorCol + 1)}
-              </>
+                <Text color={inputColor}>{line.slice(cursorCol + 1)}</Text>
+              </Text>
             ) : (
-              line
+              <Text color={inputColor} wrap="truncate">{line}</Text>
             )}
-          </Text>
+          </Box>
           <Box flexGrow={1} />
           <Text color={borderColor}> │</Text>
         </Box>
@@ -302,7 +304,7 @@ export function MenuDialog({ menu, cols, rows, config }: MenuDialogProps): React
         <>
           <Box>
             <Text color={theme.accent}>{"⌕ "}</Text>
-            <Text color={theme.text}>{menu.query}</Text>
+            <Text color={theme.inputText}>{menu.query}</Text>
             {!menu.query && <Text color={theme.textDim}>type to filter…</Text>}
           </Box>
           <Text color={theme.textDim}>{"─".repeat(Math.max(4, DIALOG_W - 4))}</Text>

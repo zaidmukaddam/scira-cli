@@ -3,6 +3,8 @@ node_modules/
 
 # build output
 dist/
+docs/.next/
+docs/node_modules/
 *.js.map
 
 # environment & secrets — NEVER commit .env

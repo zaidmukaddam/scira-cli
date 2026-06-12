@@ -24,6 +24,7 @@ type SessionOptions = {
   setScrollOffset: (offset: number) => void;
   setScreen: (screen: Screen) => void;
   setMode: (full: boolean) => void;
+  setPlanMode: (active: boolean) => void;
   setBusy: (busy: boolean) => void;
   setApprovalPending: React.Dispatch<React.SetStateAction<{ toolName: string; description: string; resolve: (v: boolean) => void } | null>>;
   getSubscriber: () => SessionSubscriber;
@@ -37,7 +38,7 @@ export function useSession(o: SessionOptions): {
   const {
     config, currentRunPath, conversationRef, feedRef, turnsRef, startedRef, runTurnRef,
     setSessions, setRunState, setCurrentRunPath, setInputText, setCursorPos,
-    setFeed, setUsage, setScrollOffset, setScreen, setMode,
+    setFeed, setUsage, setScrollOffset, setScreen, setMode, setPlanMode,
     setBusy, setApprovalPending, getSubscriber,
   } = o;
 
@@ -52,6 +53,7 @@ export function useSession(o: SessionOptions): {
   }, [currentRunPath]);
 
   const openRun = useCallback(async (runPath: string, initialQuestion?: string) => {
+    if (runPath !== currentRunPath) setPlanMode(false);
     setCurrentRunPath(runPath);
     setInputText("");
     setCursorPos(0);
@@ -136,8 +138,8 @@ export function useSession(o: SessionOptions): {
       attachSubscriber(runPath, getSubscriber());
       await runTurnRef.current("Answer my question concisely using web search. If it genuinely needs deep, multi-source, verifiable research, call requestFullResearch to ask me to approve the full research harness.");
     })();
-  }, [config, setCurrentRunPath, setInputText, setCursorPos, setFeed, setUsage, setScrollOffset,
-      setScreen, setRunState, setMode, setBusy, setApprovalPending, getSubscriber]);
+  }, [config, currentRunPath, setCurrentRunPath, setInputText, setCursorPos, setFeed, setUsage, setScrollOffset,
+      setScreen, setRunState, setMode, setPlanMode, setBusy, setApprovalPending, getSubscriber]);
 
   return { refreshSessions, refreshRun, openRun };
 }

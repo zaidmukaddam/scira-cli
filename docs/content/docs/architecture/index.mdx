@@ -1,0 +1,104 @@
+---
+title: System overview
+description: How Scira's components fit together — agents, tools, storage, and the run lifecycle.
+---
+
+Scira is built around two cooperating agents, a structured run directory, and a tool set that covers search, file I/O, shell, and claims management. This page explains how the pieces connect.
+
+## Component map
+
+```
+CLI entry (src/cli/index.ts)
+│
+├── TUI  ──────────────────────────────────────┐
+│   └── SciraApp.tsx                           │
+│       ├── useSession        session lifecycle│
+│       ├── useAgentTurn      drives agent     │
+│       ├── useSubmit         sends messages   │
+│       └── useKeyboard       slash commands   │
+│                                              │
+└── Headless (scira "question")                │
+                                               ↓
+                              Agent layer (src/agent/)
+                              ├── createOneShotAgent()   quick answers
+                              └── createResearchAgent()  full harness
+                                  │
+                                  ├── ToolLoopAgent (Vercel AI SDK)
+                                  │   └── getLanguageModel(config)
+                                  │
+                                  └── Tool sets
+                                      ├── createResearchTools()   always
+                                      ├── createCodingTools()     --workspace
+                                      ├── createFileTools()       files: config
+                                      └── MCP bridge              mcp: config
+```
+
+## Two agent modes
+
+**One-shot** (`createOneShotAgent`) handles most TUI interactions. It has access to web search, page reading, file I/O, and coding tools. If the question needs structured multi-source research — claims, verification, a written report — it calls `requestFullResearch` and hands off.
+
+**Research** (`createResearchAgent`) runs the full harness: writes `plan.md`, gathers sources into `sources.jsonl`, records findings as claims in `claims.jsonl`, verifies each claim, and synthesizes `report.md`. It runs both in the TUI (after escalation) and headlessly.
+
+Both agents are instances of `ToolLoopAgent` from the Vercel AI SDK. The loop continues until `isLoopFinished()` — a stop condition the model signals by ending a turn without calling any more tools.
+
+## Tool sets
+
+Tools are assembled per-agent in `src/tools/agent-tools.ts`. Which set a session gets depends on how it was launched:
+
+| Set | When present | Source |
+| --- | --- | --- |
+| Research tools | Always | `createResearchTools()` |
+| Coding tools | `scira --workspace <path>` or code agent mode | `createCodingTools()` |
+| File tools | `files.dir` set in config | `createFileTools()` |
+| MCP tools | `mcp.servers` or `mcp.chromeDevtools.enabled` | `createMcpBridge()` |
+| X search | `XAI_API_KEY` is set | `createXSearchTool()` |
+
+See the [Tools reference](./tools) page for the full per-tool spec.
+
+## Run directory
+
+Every session writes to a run directory under `.scira/runs/<run-id>/` (configurable via `runDirectory`). The structure:
+
+```
+.scira/runs/<id>/
+├── goal.md               original question
+├── plan.md               agent research plan (written by agent)
+├── notes.md              incremental findings (written by agent)
+├── sources.jsonl         sources read and cited (JSONL)
+├── claims.jsonl          extracted + verified claims (JSONL)
+├── report.md             final synthesized output
+├── todos.json            structured task list for the current run
+├── background-tasks.json live process registry (coding mode)
+├── convo.json            conversation history for TUI resume
+├── run.log.jsonl         event log (tool calls, timings)
+└── snapshots/            saved page extracts from readUrl
+```
+
+Path routing in `writeFile`/`readFile`/`editFile` is automatic: bare harness filenames (`plan.md`, `report.md`) resolve to the run directory; everything else resolves to the workspace root when running in code agent mode.
+
+## Approval system
+
+Every tool call that has side effects passes through a gate before executing. The gate behaviour depends on `approvalMode`:
+
+| Mode | Behaviour |
+| --- | --- |
+| `manual` | Every write, edit, and bash call prompts for approval |
+| `suggest` (default) | Report writes, workspace edits, and shell commands prompt; reading is free |
+| `auto` | All tools run without prompting |
+
+The gate is an `ApprovalCallback` injected at agent creation time. In the TUI it opens an overlay; headless mode reads from stdin.
+
+## Configuration
+
+Config merges `~/.scira/config.json` (global) with `.scira/config.json` (project). Key fields that affect agent behaviour:
+
+| Field | Effect |
+| --- | --- |
+| `llmProvider` + `model` | Which model drives the agent |
+| `approvalMode` | When side-effecting tools require user approval |
+| `citationPolicy` | `strict`: every claim needs a source; `balanced`: major claims cited |
+| `maxSources` | Cap on sources gathered per run |
+| `search.provider` | Web search backend |
+| `search.maxResults` | Results per query |
+| `files.dir` | Mount a local file directory into the agent |
+| `mcp.chromeDevtools.enabled` | Enable live browser research |

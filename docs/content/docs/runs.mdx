@@ -1,0 +1,41 @@
+---
+title: Run directory
+description: What Scira writes to disk for each research run.
+---
+
+Each run is stored under `.scira/runs/<run-id>/` (or your configured `runDirectory`).
+
+## Layout
+
+```
+goal.txt          original question
+plan.md           agent research plan
+notes.md          incremental findings
+sources.jsonl     sources (id, url, title, snapshot path)
+claims.jsonl      extracted and verified claims
+report.md         final report
+convo.json        conversation + feed (TUI resume)
+snapshots/        saved page extracts from readUrl
+```
+
+## Workflow
+
+1. **Plan** — agent writes `plan.md` with research questions
+2. **Gather** — `webSearch` and `readUrl` populate `sources.jsonl` and `notes.md`
+3. **Claims** — factual statements go to `claims.jsonl` with verification status
+4. **Report** — synthesized output in `report.md`
+
+## Inspect a run
+
+```bash
+scira list
+scira show <run-id>
+scira verify <run-id>
+scira export <run-id> --format md --output report.md
+```
+
+Resume in the TUI:
+
+```bash
+scira resume <run-id> --tui
+```

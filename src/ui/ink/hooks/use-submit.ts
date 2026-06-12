@@ -21,6 +21,8 @@ export type SubmitStateOptions = {
 
 export type SubmitRefOptions = {
   queuedPromptRef: React.RefObject<string | null>;
+  fullModeRef: React.RefObject<boolean>;
+  planModeRef: React.RefObject<boolean>;
   conversationRef: React.RefObject<{ role: "user" | "assistant"; content: string }[]>;
   feedRef: React.RefObject<FeedItem[]>;
 };
@@ -39,6 +41,7 @@ export type SubmitSetterOptions = {
   setRunState: React.Dispatch<React.SetStateAction<RunState | null>>;
   setPendingRerun: (pending: boolean) => void;
   setMode: (full: boolean) => void;
+  setPlanMode: (active: boolean) => void;
   setConfig: (next: SciraConfig) => void;
   setMcpOpen: (open: boolean) => void;
   setHeroHidden: (hidden: boolean) => void;
@@ -67,10 +70,10 @@ export function useSubmit(o: SubmitOptions): {
   stopTurn: () => void;
 } {
   const { config, currentRunPath, sessions, selectedIdx, busy, usage, pendingRerun } = o.state;
-  const { queuedPromptRef, conversationRef, feedRef } = o.refs;
+  const { queuedPromptRef, fullModeRef, planModeRef, conversationRef, feedRef } = o.refs;
   const {
     setApprovalPending, setInputText, setCursorPos, setInputHistory, setHistoryIndex, setHelpOpen,
-    setNotice, setBusy, setScreen, setFeed, setRunState, setPendingRerun, setMode, setConfig, setMcpOpen,
+    setNotice, setBusy, setScreen, setFeed, setRunState, setPendingRerun, setMode, setPlanMode, setConfig, setMcpOpen,
     setHeroHidden,
   } = o.setters;
   const { pushFeed, refreshSessions, openRun, openMenu, handleSettings, runTurn, exit } = o.actions;
@@ -346,11 +349,22 @@ export function useSubmit(o: SubmitOptions): {
       })();
       return;
     }
+    if (text === "/plan") {
+      if (fullModeRef.current) {
+        pushFeed({ kind: "status", text: "Plan mode applies to coding/quick turns only. It is disabled during full research." });
+        return;
+      }
+      const next = !planModeRef.current;
+      setPlanMode(next);
+      pushFeed({ kind: "status", text: next ? "Plan mode on. Agent will explore and plan before making changes." : "Plan mode off. Agent can execute changes." });
+      return;
+    }
     if (text === "/rerun") {
       if (busy) return;
       if (rerunConfirmRef.current) {
         rerunConfirmRef.current = false;
         conversationRef.current = [];
+        setPlanMode(false);
         setMode(true); // explicit deep re-run uses the full harness
         setFeed([{ kind: "status", text: "Re-running research…" }]);
         void runTurn("Re-run the research from scratch. Plan, gather grounded sources, and rewrite report.md, then summarize.");

@@ -1,0 +1,134 @@
+---
+title: Commands
+description: CLI and TUI slash command reference.
+---
+
+## Quick reference
+
+The three commands you need most:
+
+```bash
+❯ scira init       # First-time setup wizard
+❯ scira            # Open the interactive TUI
+❯ scira "question" # Headless — writes report.md and exits
+```
+
+---
+
+## CLI commands
+
+| Command | What it does |
+| --- | --- |
+| `scira init` | Interactive setup for API keys and configuration |
+| `scira keys` | Show where to get and save missing API keys |
+| `scira doctor` | Check credentials and environment health |
+| `scira` | Open the TUI home screen (or run headlessly with a question) |
+| `scira new <question>` | Start a new run; add `--tui` to open the TUI |
+| `scira resume <run-id>` | Resume a previous run in the TUI |
+| `scira list` | List all runs with status |
+| `scira show <run-id>` | Print run status and metadata |
+| `scira run <run-id>` | Re-run the research agent on an existing run |
+| `scira verify <run-id>` | Print the claim verification report |
+| `scira export <run-id>` | Export a report (`--format md\|json`, `--output <path>`) |
+| `scira watch <goal>` | Monitor a topic on a schedule |
+| `scira models` | List available models for the active provider |
+| `scira config` | Print the resolved merged config |
+| `scira mcp …` | Manage MCP servers (see below) |
+
+### MCP subcommands
+
+```bash
+❯ scira mcp list
+❯ scira mcp add stdio <name> <command>
+❯ scira mcp add sse  <name> <url>
+❯ scira mcp add http <name> <url>
+❯ scira mcp oauth   <name>
+❯ scira mcp enable  <name>
+❯ scira mcp disable <name>
+❯ scira mcp remove  <name>
+```
+
+### Export formats
+
+```bash
+❯ scira export <run-id> --format md   --output report.md
+❯ scira export <run-id> --format json --output data.json
+```
+
+---
+
+## TUI slash commands
+
+Inside the interactive TUI, type `/` to open the command menu. It filters as you type, and <kbd>Enter</kbd> runs the highlighted command.
+
+| Command | What it does |
+| --- | --- |
+| `/help` | Show commands and keyboard shortcuts |
+| `/home` | Go to the home screen |
+| `/new` | Start a new research run |
+| `/back` | Return to the sessions list |
+| `/plan` | Toggle plan mode (explore and plan before changes) |
+| `/rerun` | Run the research agent again for this run |
+| `/rename <title>` | Set a title for the session |
+| `/report` | Show `report.md` in the timeline |
+| `/sources` | List the run's gathered sources |
+| `/claims` | List claims with id, confidence, status, and text |
+| `/why <claim-id>` | Show full detail for a single claim |
+| `/usage` | Show token usage per model for this session |
+| `/copy` | Copy the last answer (or report) to the clipboard |
+| `/model` | Open the model selector |
+| `/llm` | Switch the LLM provider |
+| `/provider` | Open the search provider selector |
+| `/theme <mode>` | Set the theme: `dark`, `light`, or `auto` |
+| `/key <NAME> <value>` | Save a key to `~/.scira/.env` |
+| `/keys` | API key status and signup links |
+| `/mcp` | Manage MCP servers |
+| `/stop` | Abort the current agent turn |
+| `/quit` | Exit Scira |
+
+For the full interface — file mentions, session references, and tool-output navigation — see [The TUI](/docs/tui).
+
+### Keyboard shortcuts
+
+| Key | Action |
+| --- | --- |
+| <kbd>Enter</kbd> | Submit message or run the highlighted command |
+| <kbd>Esc</kbd> | Clear input, or abort the turn while running |
+| <kbd>↑</kbd> <kbd>↓</kbd> | Cycle input history (empty box) |
+| <kbd>PageUp</kbd> <kbd>PageDown</kbd> | Scroll the timeline |
+| <kbd>c</kbd> | Collapse or expand tool-output groups |
+| <kbd>[</kbd> <kbd>]</kbd> | Focus the previous / next group |
+| <kbd>Ctrl</kbd>+<kbd>W</kbd> | Delete the previous word |
+| <kbd>Ctrl</kbd>+<kbd>D</kbd> | Quit (empty input) |
+
+---
+
+## Common workflows
+
+**Start a headless run and read the result:**
+
+```bash
+❯ scira "compare vector database options in 2025"
+❯ cat .scira/runs/<run-id>/report.md
+```
+
+**Resume a run and keep researching:**
+
+```bash
+❯ scira list
+❯ scira resume <run-id> --tui
+```
+
+**Add an Exa MCP server and verify it loaded:**
+
+```bash
+❯ scira mcp add http exa https://mcp.exa.ai/mcp
+❯ scira doctor
+```
+
+**Save an API key mid-session:**
+
+```text
+/key EXA_API_KEY ex-xxxxxxxxxxxxxxxx
+/keys
+```

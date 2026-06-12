@@ -1,0 +1,260 @@
+---
+title: Adding a provider
+description: A step-by-step walkthrough for wiring up a new LLM or search provider.
+---
+
+Scira's provider system is built to be extended. Both LLM and search providers follow the same pattern: a few lines of config, a credential entry, and a network adapter. This page walks through both.
+
+## Adding an LLM provider
+
+Adding an LLM provider touches five files. The example below adds a hypothetical provider called `"myai"` backed by an OpenAI-compatible API.
+
+<Steps>
+
+<Step>
+
+### Declare the env keys
+
+In `src/config/env-store.ts`, add the key name to `MANAGED_ENV_KEYS`:
+
+```ts title="src/config/env-store.ts"
+export const MANAGED_ENV_KEYS = [
+  // ...existing keys...
+  "MYAI_API_KEY", // add this
+] as const;
+```
+
+The literal union `ManagedEnvKey` is derived from this array, so the type system updates automatically.
+
+</Step>
+
+<Step>
+
+### Add a key guide
+
+In `src/config/env-guide.ts`, add an entry to `ENV_KEY_GUIDES`. This drives the `/key`, `scira init`, and `scira keys` output:
+
+```ts title="src/config/env-guide.ts"
+MYAI_API_KEY: {
+  name: "MYAI_API_KEY",
+  label: "MyAI",
+  signupUrl: "https://platform.myai.com/api-keys",
+  docsUrl: "https://docs.myai.com/authentication",
+  placeholder: "myai-...",
+  steps: [
+    "Sign up at platform.myai.com.",
+    "Open API Keys in the sidebar.",
+    "Create a key and paste it here.",
+  ],
+},
+```
+
+</Step>
+
+<Step>
+
+### Register the provider
+
+In `src/providers/llm/registry.ts`, add the provider ID to the union and the env/label maps:
+
+```ts title="src/providers/llm/registry.ts"
+export const LLM_PROVIDERS: LlmProvider[] = [
+  "gateway", "xai", "workers-ai", "huggingface",
+  "myai", // add this
+];
+
+export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {
+  // ...existing entries...
+  myai: "MyAI",
+};
+
+export const LLM_PROVIDER_ENV: Record<LlmProvider, string[]> = {
+  // ...existing entries...
+  myai: ["MYAI_API_KEY"],
+};
+```
+
+Then add a case to `defaultModelFor` and `getLanguageModel`:
+
+```ts title="src/providers/llm/registry.ts"
+export function defaultModelFor(provider: LlmProvider): string {
+  switch (provider) {
+    // ...
+    case "myai": return "myai-reasoning-v1";
+    // ...
+  }
+}
+
+export function getLanguageModel(config: SciraConfig): LanguageModel {
+  // ...
+  switch (config.llmProvider) {
+    case "myai":
+      return createOpenAICompatible({
+        name: "myai",
+        baseURL: "https://api.myai.com/v1",
+        apiKey: process.env.MYAI_API_KEY,
+      })(config.model);
+    // ...
+  }
+}
+```
+
+Scira uses the Vercel AI SDK, so any `@ai-sdk/openai-compatible` adapter works. For providers with first-class SDK support, import the dedicated package instead (e.g. `@ai-sdk/anthropic`, `@ai-sdk/google`).
+
+</Step>
+
+<Step>
+
+### Add the type to SciraConfig
+
+In `src/types/index.ts`, extend the `llmProvider` enum:
+
+```ts title="src/types/index.ts"
+llmProvider: z.enum([
+  "gateway", "xai", "workers-ai", "huggingface",
+  "myai", // add this
+]).default("gateway"),
+```
+
+</Step>
+
+<Step>
+
+### Add a static model list
+
+In `src/providers/llm/models.ts`, add a fallback model list and wire a live-list fetcher if the provider has a `/models` endpoint:
+
+```ts title="src/providers/llm/models.ts"
+const STATIC_MODELS: Record<Exclude<LlmProvider, "gateway">, LlmModel[]> = {
+  // ...existing entries...
+  myai: [
+    { id: "myai-reasoning-v1", name: "MyAI Reasoning v1" },
+    { id: "myai-fast-v1",      name: "MyAI Fast v1" },
+  ],
+};
+
+// Inside listModels():
+case "myai": return listMyAiModels(); // implement like listXaiModels()
+```
+
+The static list is shown in the `/model` picker when the user hasn't set the key yet, and as a fallback when the live call fails.
+
+</Step>
+
+</Steps>
+
+After these five changes, `scira init` will prompt for `MYAI_API_KEY`, `/llm` will list **MyAI** as an option, and the `/model` picker will show your model list.
+
+---
+
+## Adding a search provider
+
+Adding a search provider is simpler — it touches three files.
+
+<Steps>
+
+<Step>
+
+### Declare the env key
+
+Same as for LLM providers — add to `MANAGED_ENV_KEYS` in `src/config/env-store.ts` and add an entry to `ENV_KEY_GUIDES` in `src/config/env-guide.ts`.
+
+</Step>
+
+<Step>
+
+### Register in the readiness check
+
+In `src/providers/llm/readiness.ts`, add the provider ID to the `SearchProvider` union and the readiness check map so `scira doctor` can verify the key:
+
+```ts title="src/providers/llm/readiness.ts"
+export type SearchProvider = "exa" | "firecrawl" | "parallel" | "mysearch";
+
+export const SEARCH_PROVIDER_ENV: Record<SearchProvider, string> = {
+  exa:       "EXA_API_KEY",
+  firecrawl: "FIRECRAWL_API_KEY",
+  parallel:  "PARALLEL_API_KEY",
+  mysearch:  "MYSEARCH_API_KEY",
+};
+```
+
+</Step>
+
+<Step>
+
+### Implement the adapter
+
+In `src/tools/search-web.ts`, add a strategy function that maps a query and `SciraConfig` to `SearchResult[]`:
+
+```ts title="src/tools/search-web.ts"
+async function mySearch(
+  query: string,
+  config: SciraConfig,
+  opts: QueryOptions = {}
+): Promise<SearchResult[]> {
+  requireSearchProvider("mysearch");
+  const client = getMySearch(); // lazy singleton, similar to getExa()
+  const results = await client.search(query, {
+    maxResults: opts.maxResults ?? config.search.maxResults,
+  });
+  return results.map((r): SearchResult => ({
+    url:   r.url,
+    title: r.title ?? "",
+    snippet: r.summary?.slice(0, 1000) ?? "",
+    publishedDate: r.date ?? undefined,
+  }));
+}
+```
+
+Then add a case in the `search()` dispatcher:
+
+```ts title="src/tools/search-web.ts"
+export async function search(
+  query: string,
+  config: SciraConfig,
+  opts: QueryOptions = {}
+): Promise<SearchResult[]> {
+  switch (config.search.provider) {
+    case "exa":       return exaSearch(query, config, opts);
+    case "firecrawl": return firecrawlSearch(query, config, opts);
+    case "parallel":  return parallelSearch(query, config, opts);
+    case "mysearch":  return mySearch(query, config, opts);  // add this
+  }
+}
+```
+
+</Step>
+
+<Step>
+
+### Add the provider to SciraConfig
+
+In `src/types/index.ts`, extend the `search.provider` enum:
+
+```ts title="src/types/index.ts"
+search: z.object({
+  provider: z.enum([
+    "parallel", "exa", "firecrawl",
+    "mysearch", // add this
+  ]).default("exa"),
+  // ...
+})
+```
+
+After this change, `"mysearch"` is valid in `config.json` and the `/provider` TUI picker will list it.
+
+</Step>
+
+</Steps>
+
+<Callout type="warn" title="Banned providers">
+  Scira does not accept adapters for **Tavily**, **Brave Search**, or **Perplexity**. PRs adding them will be closed without review.
+</Callout>
+
+## Things to check before opening a PR
+
+- The adapter is stateless: it takes config + options and returns data; no global mutable state except the lazy singleton client.
+- `bun test` passes, including any existing provider tests.
+- `scira doctor` reports the new key correctly (`set` when present, `missing` otherwise).
+- The `/model` or `/provider` picker lists the new option and selects it correctly.
+- No new `any` types without a comment explaining why.

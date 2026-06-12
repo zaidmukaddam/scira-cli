@@ -1,0 +1,201 @@
+---
+title: Tools reference
+description: Every tool the agent can call — inputs, outputs, and when each is used.
+---
+
+Tools are assembled per-session in `src/tools/agent-tools.ts`. The set available in any given run depends on how the session was started (see [System overview](./index)).
+
+## Research tools
+
+Always present. These form the core of every session.
+
+### `webSearch`
+
+Runs multiple search queries in parallel. The agent always sends 3–10 queries per call to cover a topic from different angles.
+
+```ts
+input: {
+  queries:    string[]          // 3-10 queries
+  maxResults: number[]          // per-query cap (default 10, max 20)
+  topics:     ("general"|"news")[]
+  quality:    ("default"|"best")[]
+  startDates: (string|null)[]   // ISO date filter per query
+}
+output: JSON array of { query, results: [{ title, url, snippet, publishedDate }] }
+```
+
+All queries are dispatched concurrently to the configured search provider. Errors per-query are surfaced in the response rather than thrown, so partial results still come back.
+
+### `readUrl`
+
+Fetches a URL, extracts readable text, and saves a snapshot to `snapshots/<slug>.md` in the run directory.
+
+```ts
+input:  { url: string }
+output: "# <title>\n(snapshot saved to snapshots/…)\n\n<text>"
+```
+
+The snapshot path is returned so the agent can record it in `sources.jsonl`. Output is truncated at 8,000 characters.
+
+### `readFile`
+
+Reads a file. Path routing is automatic: bare harness names (`plan.md`, `notes.md`, `report.md`, `sources.jsonl`, `claims.jsonl`) resolve to the run directory; other paths resolve to the workspace root in code agent mode.
+
+```ts
+input:  { path: string }
+output: file content (truncated at 8,000 chars)
+```
+
+### `writeFile`
+
+Creates or overwrites a file. Same path routing as `readFile`. Writes to workspace paths and to `report.md` or `plan.md` prompt the approval gate in `suggest` mode.
+
+```ts
+input:  { path: string, content: string }
+output: "Wrote N chars to <path> (run|workspace)"
+```
+
+Writes to `background-tasks.json` are blocked — that file is managed by the bash tool.
+
+### `editFile`
+
+Replaces an exact string in an existing file. The `oldString` must match exactly once; the tool errors if it matches zero or more than one time.
+
+```ts
+input:  { path: string, oldString: string, newString: string }
+output: "Edited <path>" | error message
+```
+
+### `createClaim`
+
+Records a structured factual claim to `claims.jsonl`. Call immediately after reading a source — don't batch.
+
+```ts
+input: {
+  id:         string              // e.g. "claim_001"
+  text:       string              // the claim statement
+  confidence: "low"|"medium"|"high"
+  sourceIds:  string[]            // source IDs from sources.jsonl
+  reason:     string              // why these sources support the claim
+}
+output: "Claim claim_001 recorded."
+```
+
+### `verifyClaim`
+
+Updates a claim's verification status after cross-checking its evidence.
+
+```ts
+input: {
+  id:     string
+  status: "verified"|"weak"|"contradicted"|"needs_review"
+  reason: string
+}
+output: "Claim claim_001 → verified"
+```
+
+### `todo`
+
+Manages a structured task list for the current run, persisted to `todos.json`.
+
+```ts
+input: {
+  action:  "create"|"edit"|"mark"|"remove"|"rewrite"|"list"
+  id?:     string          // for edit, mark, remove
+  content?: string
+  status?: "pending"|"in_progress"|"completed"|"cancelled"
+  items?:  { id?, content, status? }[]   // for create, rewrite
+}
+output: formatted todo list
+```
+
+Status symbols in TUI output: `[ ]` pending, `[~]` in progress, `[x]` completed, `[-]` cancelled.
+
+### `listSkills` / `readSkill`
+
+`listSkills` returns a one-line summary of every built-in skill. `readSkill` returns the full content of a named skill.
+
+```ts
+// listSkills
+input:  {}
+output: "research-plan: How to structure a research session…\n…"
+
+// readSkill
+input:  { name: string }
+output: full skill text
+```
+
+### `bash` (run directory)
+
+In research-only mode (no `--workspace`), a locked-down shell runs inside the run directory. Commands that escape the run directory (absolute paths, `..`, `$HOME`) are rejected.
+
+```ts
+input:  { command: string, timeoutMs?: number }
+output: combined stdout/stderr (truncated at 8,000 chars)
+```
+
+### `xSearch`
+
+Only present when `XAI_API_KEY` is set. Searches X (Twitter) for recent posts.
+
+### File tools
+
+Only present when `files.dir` is set in config. Provide `listFiles`, `searchFiles`, `getFile`, `fileExists`, `moveFile`, and `deleteFile` over the configured directory. `moveFile` and `deleteFile` always prompt the approval gate.
+
+---
+
+## Coding tools
+
+Present when launched with a workspace path. These replace or supplement the research shell.
+
+### `bash` (workspace)
+
+Full shell running in the workspace root, with background process management.
+
+```ts
+input: {
+  action:    "run"|"background"|"list"|"output"|"kill"
+  command?:  string
+  taskId?:   string       // for output, kill
+  cwd?:      string       // relative to workspace root
+  timeoutMs?: number      // for run (default 60s)
+  tailLines?: number      // for output (default 50)
+}
+```
+
+Background tasks are spawned detached and tracked in `background-tasks.json`. Their output is buffered (last 500 lines) and readable across turns. Use `action=background` to start a dev server, `action=output` to tail its logs, `action=kill` to stop it.
+
+### `listWorkspaceDir`
+
+Lists a directory inside the workspace. Supports recursive listing up to 200 entries.
+
+```ts
+input:  { path: string, recursive?: boolean }
+output: ls output or newline-separated paths
+```
+
+### `grepWorkspace`
+
+Runs `grep -rn -E` across the workspace with an optional file pattern filter. Returns up to 100 matching lines.
+
+```ts
+input:  { pattern: string, path?: string, filePattern?: string }
+output: "src/foo.ts:42:  const x = ..." (up to 100 lines)
+```
+
+---
+
+## Plan mode restrictions
+
+In plan mode, the agent can only read — write, edit, bash mutations, and MCP tools are blocked. The following tools remain fully available:
+
+```
+webSearch  xSearch  readUrl  readFile  readWorkspaceFile
+listWorkspaceDir  grepWorkspace  listSkills  readSkill  bash  todo
+```
+
+The `bash` tool in plan mode is further restricted: only `ls`, `cat`, `head`, `tail`, `wc`, `grep`, `rg`, `pwd`, `file`, `stat`, `tree`, `which`, `find` (without mutating flags), and `git status/log/diff/show` are allowed. No pipes, redirects, or subshells.
+
+`writeFile` in plan mode is allowed only for `plan.md`.
+
+See [Plan mode](./plan-mode) for the full model.

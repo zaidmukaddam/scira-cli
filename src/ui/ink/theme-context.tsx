@@ -1,53 +1,64 @@
 import React, { createContext, useContext, useMemo, useState } from "react";
 import { type SciraConfig } from "../../types/index.js";
-import { probeTerminalTheme } from "./terminal-probe.js";
 import {
   detectTerminalTheme,
-  getTheme,
   getThemeFromResolved,
+  resolveRenderingAppearance,
   watchAutoThemeChanges,
   type ThemeColors,
 } from "./theme.js";
 
-const ThemeCtx = createContext<ThemeColors>(getTheme("auto"));
+type ThemeContextValue = {
+  colors: ThemeColors;
+  /** Detected terminal background (env/heuristics). */
+  terminalAppearance: "dark" | "light";
+  /** Appearance actually used for colors (may override a mismatched config.theme). */
+  renderingAppearance: "dark" | "light";
+};
+
+const initialTerminal = detectTerminalTheme();
+
+const ThemeCtx = createContext<ThemeContextValue>({
+  colors: getThemeFromResolved(initialTerminal),
+  terminalAppearance: initialTerminal,
+  renderingAppearance: initialTerminal,
+});
 
 type ThemeProviderProps = {
   config: SciraConfig;
-  stdin?: NodeJS.ReadStream;
-  stdout?: NodeJS.WriteStream;
   children: React.ReactNode;
 };
 
-export function ThemeProvider({ config, stdin, stdout, children }: ThemeProviderProps): React.ReactElement {
-  const [autoResolved, setAutoResolved] = useState(detectTerminalTheme);
-  const [probed, setProbed] = useState<"dark" | "light" | undefined>(undefined);
+export function ThemeProvider({ config, children }: ThemeProviderProps): React.ReactElement {
+  const [terminalAppearance, setTerminalAppearance] = useState(detectTerminalTheme);
 
   React.useEffect(() => {
-    if (config.theme !== "auto") {
-      setProbed(undefined);
-      return;
-    }
+    return watchAutoThemeChanges(() => {
+      const next = detectTerminalTheme();
+      setTerminalAppearance((prev) => (prev === next ? prev : next));
+    });
+  }, []);
 
-    const sync = () => {
-      void (async () => {
-        const live = stdin && stdout ? await probeTerminalTheme(stdin, stdout) : undefined;
-        setProbed((prev) => (prev === live ? prev : live));
-        const next = live ?? detectTerminalTheme();
-        setAutoResolved((prev) => (prev === next ? prev : next));
-      })();
+  const value = useMemo((): ThemeContextValue => {
+    const renderingAppearance = resolveRenderingAppearance(config.theme, terminalAppearance);
+    return {
+      colors: getThemeFromResolved(renderingAppearance),
+      terminalAppearance,
+      renderingAppearance,
     };
+  }, [config.theme, terminalAppearance]);
 
-    return watchAutoThemeChanges(sync);
-  }, [config.theme, stdin, stdout]);
-
-  const colors = useMemo(() => {
-    if (config.theme !== "auto") return getTheme(config.theme);
-    return getThemeFromResolved(probed ?? autoResolved);
-  }, [config.theme, autoResolved, probed]);
-
-  return <ThemeCtx.Provider value={colors}>{children}</ThemeCtx.Provider>;
+  return <ThemeCtx.Provider value={value}>{children}</ThemeCtx.Provider>;
 }
 
 export function useTheme(): ThemeColors {
-  return useContext(ThemeCtx);
+  return useContext(ThemeCtx).colors;
+}
+
+export function useTerminalAppearance(): "dark" | "light" {
+  return useContext(ThemeCtx).terminalAppearance;
+}
+
+export function useRenderingAppearance(): "dark" | "light" {
+  return useContext(ThemeCtx).renderingAppearance;
 }

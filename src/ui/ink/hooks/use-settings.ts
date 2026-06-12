@@ -3,12 +3,13 @@ import { SciraConfig } from "../../../types/index.js";
 import { saveGlobalConfig } from "../../../config/load-config.js";
 import { setEnvKey, isManagedEnvKey, MANAGED_ENV_KEYS } from "../../../config/env-store.js";
 import { detectEnv, type SearchProvider } from "../../../providers/llm/readiness.js";
+import { formatKeysStatus } from "../../../config/env-guide.js";
 import { listModels } from "../../../providers/llm/models.js";
 import { LLM_PROVIDERS, LLM_PROVIDER_LABELS, defaultModelFor, type LlmProvider } from "../../../providers/llm/registry.js";
 import { type Screen, type FeedItem } from "../types.js";
 import { PROVIDERS } from "../constants.js";
 import { prettifyModelId } from "../lib/utils.js";
-import { detectTerminalTheme } from "../theme.js";
+import { detectTerminalTheme, resolveRenderingAppearance } from "../theme.js";
 import { useMountEffect } from "../components/effects.js";
 
 export type Menu = { type: "model" | "provider" | "llm"; items: string[]; index: number; loading?: boolean; query: string };
@@ -150,14 +151,17 @@ export function useSettings({ config, setConfig, screen, pushFeed, setNotice }: 
       if (!name || !value) return `Usage: /key <NAME> <value>\nManaged keys: ${MANAGED_ENV_KEYS.join(", ")}`;
       if (!isManagedEnvKey(name)) return `Unknown key "${name}". Managed keys: ${MANAGED_ENV_KEYS.join(", ")}`;
       await setEnvKey(name, value);
-      return `${name} saved to ~/.scira/.env and active for this session.`;
+      return `${name} saved to ~/.scira/.env and active for this session. Use .scira/.env in a project to scope keys to that repo.`;
     }
     if (cmd === "/theme") {
       if (!arg) {
-        const resolved = config.theme === "auto" ? detectTerminalTheme() : config.theme;
+        const terminal = detectTerminalTheme();
+        const resolved = resolveRenderingAppearance(config.theme, terminal);
         const mode = config.theme === "auto"
-          ? "follows terminal picker"
-          : "locked — run /theme auto to sync with picker";
+          ? "follows terminal"
+          : config.theme !== resolved
+            ? `locked ${config.theme}, but terminal is ${terminal} — rendering ${resolved}`
+            : `locked ${config.theme}`;
         return `Current theme: ${config.theme} (rendering ${resolved})\n${mode}\nOptions: dark, light, auto`;
       }
       if (!["dark", "light", "auto"].includes(arg)) return `Unknown theme "${arg}". Options: dark, light, auto`;
@@ -167,9 +171,7 @@ export function useSettings({ config, setConfig, screen, pushFeed, setNotice }: 
       return `Theme set to ${arg}.`;
     }
     if (cmd === "/keys") {
-      return detectEnv(config.search.provider, config.llmProvider)
-        .map((c) => `${c.present ? "set    " : "missing"} ${c.name}${c.required ? " (required)" : ""}`)
-        .join("\n");
+      return formatKeysStatus(detectEnv(config.search.provider, config.llmProvider));
     }
     return null;
   }, [config, resolveModelName, setConfig, applyLlmProvider]);

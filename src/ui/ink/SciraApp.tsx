@@ -62,6 +62,9 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
   const fullModeRef = useRef(false);
   const [fullMode, setFullModeState] = useState(false);
   const setMode = useCallback((full: boolean) => { fullModeRef.current = full; setFullModeState(full); }, []);
+  const planModeRef = useRef(false);
+  const [planMode, setPlanModeState] = useState(false);
+  const setPlanMode = useCallback((active: boolean) => { planModeRef.current = active; setPlanModeState(active); }, []);
 
   const [usage, setUsage] = useState<Record<string, ModelUsage>>({});
   const turnsRef = useRef<TurnUsage[]>([]);
@@ -224,7 +227,7 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
   const { refreshSessions, refreshRun, openRun: openRunBase } = useSession({
     config, currentRunPath, conversationRef, feedRef, turnsRef, startedRef, runTurnRef,
     setSessions, setRunState, setCurrentRunPath, setInputText, setCursorPos,
-    setFeed, setUsage, setScrollOffset, setScreen, setMode,
+    setFeed, setUsage, setScrollOffset, setScreen, setMode, setPlanMode,
     setBusy, setApprovalPending, getSubscriber,
   });
 
@@ -301,17 +304,17 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
   }, [mcpRowCount]);
 
   const { runTurn } = useAgentTurn({
-    config, currentRunPath, queuedPromptRef, fullModeRef, conversationRef, turnsRef, feedRef,
-    setBusy, setScrollOffset, refreshRun, recordUsage, setMode, getSubscriber,
+    config, currentRunPath, queuedPromptRef, fullModeRef, planModeRef, conversationRef, turnsRef, feedRef,
+    setBusy, setScrollOffset, refreshRun, recordUsage, setMode, setPlanMode, getSubscriber,
   });
   runTurnRef.current = runTurn;
 
   const { submitHome, submitChat, stopTurn } = useSubmit({
     state: { config, currentRunPath, sessions, selectedIdx, busy, usage, pendingRerun },
-    refs: { queuedPromptRef, conversationRef, feedRef },
+    refs: { queuedPromptRef, fullModeRef, planModeRef, conversationRef, feedRef },
     setters: {
       setApprovalPending, setInputText, setCursorPos, setInputHistory, setHistoryIndex, setHelpOpen,
-      setNotice, setBusy, setScreen, setFeed, setRunState, setPendingRerun, setMode, setConfig, setMcpOpen,
+      setNotice, setBusy, setScreen, setFeed, setRunState, setPendingRerun, setMode, setPlanMode, setConfig, setMcpOpen,
       setHeroHidden,
     },
     actions: { pushFeed, refreshSessions, openRun, openMenu, handleSettings, runTurn, exit },
@@ -393,7 +396,7 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
   const activeUsage = usage[config.model];
 
   const themed = (node: React.ReactNode): React.ReactElement => (
-    <ThemeProvider config={config} stdin={stdin} stdout={stdout}>{node}</ThemeProvider>
+    <ThemeProvider config={config}>{node}</ThemeProvider>
   );
 
   if (screen === "home") {
@@ -404,7 +407,7 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
           <MouseTracker stdout={stdout} stdin={stdin} onData={handleMouseData} onUnmount={() => setHoveredIdx(null)} />
         )}
         {busy && <AnimationTick setBlink={setBlink} setFrame={setFrame} setReasoningTick={setReasoningTick} />}
-        <TopBar screen={screen} runState={runState} fullMode={fullMode} activeUsage={activeUsage} busy={busy} frame={frame} cwdDisplay={CWD_DISPLAY} config={config} />
+        <TopBar screen={screen} runState={runState} fullMode={fullMode} planMode={planMode} activeUsage={activeUsage} busy={busy} frame={frame} cwdDisplay={CWD_DISPLAY} config={config} />
         <HomeScreen
           cols={cols}
           rows={rows}
@@ -459,7 +462,7 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
         <MouseTracker stdout={stdout} stdin={stdin} onData={handleMouseData} onUnmount={() => setHoveredIdx(null)} />
       )}
       {busy && <AnimationTick setBlink={setBlink} setFrame={setFrame} setReasoningTick={setReasoningTick} />}
-      <TopBar screen={screen} runState={runState} fullMode={fullMode} activeUsage={activeUsage} busy={busy} frame={frame} cwdDisplay={CWD_DISPLAY} config={config} />
+      <TopBar screen={screen} runState={runState} fullMode={fullMode} planMode={planMode} activeUsage={activeUsage} busy={busy} frame={frame} cwdDisplay={CWD_DISPLAY} config={config} />
       <Box flexDirection="column" flexGrow={1} paddingTop={1} overflow="hidden">
         {visibleLines}
       </Box>

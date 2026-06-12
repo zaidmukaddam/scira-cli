@@ -1,0 +1,90 @@
+---
+title: Agent loop
+description: How the research agent processes a question — from first search to final report.
+---
+
+The research agent follows a fixed five-phase loop. Each phase is driven by the model calling tools; the harness records events to `run.log.jsonl` as it goes.
+
+## Phases
+
+### 0 — Bootstrap (mandatory)
+
+Before doing any work, the agent reads relevant **research skills** with `readSkill`. Skills are plain-text tactics baked into the binary that tell the agent how to structure searches, evaluate sources, record claims, and write reports. Skipping this is a bug — the skill names are injected into the system prompt as a catalog, and the agent is instructed to pull them before starting.
+
+Available skills:
+
+| Name | What it covers |
+| --- | --- |
+| `research-plan` | How to structure discovery, deep-dive, and synthesis phases |
+| `search-strategy` | Query formulation, parallel fetch, iteration on failures |
+| `source-quality` | Primary vs. secondary sources, bias indicators, corroboration |
+| `claim-verification` | Verification status taxonomy, cross-checking methods |
+| `report-structure` | Section layout, citation format, how to treat unverified claims |
+| `browser-research` | When and how to use Chrome DevTools MCP for live page evidence |
+| `tool-efficiency` | Token and turn budgeting, when to escalate vs. answer directly |
+
+### 1 — Plan
+
+The agent writes `plan.md` with research questions, approach, and phase checkboxes. In code agent mode it also uses `todo` to break the task into trackable steps.
+
+### 2 — Gather
+
+`webSearch` runs 3–10 parallel queries in a single call — the tool accepts an array of query strings and fires them concurrently. Results come back as a JSON array of `{ query, results: [{ title, url, snippet, publishedDate }] }`.
+
+For the best sources, the agent calls `readUrl` to fetch the full page. Each call saves a snapshot to `snapshots/<slug>.md` inside the run directory and returns the snapshot path, which the agent records in `sources.jsonl`.
+
+In code agent mode, `grepWorkspace` and `listWorkspaceDir` replace web searches for understanding the codebase.
+
+### 3 — Extract claims
+
+After reading each source the agent calls `createClaim` with:
+
+```ts
+{ id: "claim_001", text: "...", confidence: "high" | "medium" | "low",
+  sourceIds: ["src_01"], reason: "..." }
+```
+
+Claims are appended to `claims.jsonl` immediately. The agent does not batch — recording happens right after each source is read so nothing gets lost if the loop is interrupted.
+
+### 4 — Verify
+
+Once all claims are recorded, the agent iterates through them with `verifyClaim`:
+
+```ts
+{ id: "claim_001", status: "verified" | "weak" | "contradicted" | "needs_review",
+  reason: "..." }
+```
+
+`claims.jsonl` is rewritten in-place. Verification status is recorded in the run log and used by `scira verify <run-id>`.
+
+### 5 — Synthesize
+
+The agent writes `report.md` following the `report-structure` skill — typically: executive summary, findings with inline citations, open questions, source list. On the research agent, a `report.updated` event is fired and the TUI shows the report in the feed. The loop ends on the next turn without a tool call.
+
+## One-shot escalation
+
+The one-shot agent has a lighter toolset and no harness mandate. It handles most single-turn questions directly. When the question is genuinely research-grade, it calls `requestFullResearch`:
+
+```ts
+{ reason: "Topic requires multi-source verification and a written report." }
+```
+
+The TUI intercepts this, the research agent takes over with a fresh harness, and the full five-phase loop runs.
+
+## Temporal context
+
+Both agents receive `today is <weekday, month day, year>` in the system prompt. All searches include the current year in query suggestions. The agents are instructed to treat model memory as unreliable for date-sensitive facts and to verify against sources.
+
+## Event log
+
+Every tool call writes to `run.log.jsonl`:
+
+```jsonl
+{"type":"tool.search","data":{"queries":["..."],"resultCount":12},"ts":"..."}
+{"type":"tool.open_url","data":{"url":"...","title":"...","snapshot":"snapshots/foo.md"},"ts":"..."}
+{"type":"claim.created","data":{"id":"claim_001","confidence":"high","sourceIds":["src_01"]},"ts":"..."}
+{"type":"claim.verified","data":{"id":"claim_001","status":"verified"},"ts":"..."}
+{"type":"report.updated","data":{"chars":4200},"ts":"..."}
+```
+
+`scira show <run-id>` reads this log to render the run timeline.

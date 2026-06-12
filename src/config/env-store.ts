@@ -1,4 +1,5 @@
 import process from "node:process";
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -22,6 +23,58 @@ export function isManagedEnvKey(name: string): name is ManagedEnvKey {
 
 /** Path to the global env file that the CLI loads on startup. */
 export const globalEnvPath = join(homedir(), ".scira", ".env");
+
+/** Per-project env file: `<projectRoot>/.scira/.env` (overrides global keys). */
+export function projectEnvPath(projectRoot = process.cwd()): string {
+  return join(projectRoot, ".scira", ".env");
+}
+
+/** Parse simple KEY=VALUE lines from a dotenv file. */
+export function parseEnvFile(content: string): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  for (const rawLine of content.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const normalized = line.replace(/^export\s+/u, "");
+    const eq = normalized.indexOf("=");
+    if (eq <= 0) continue;
+    const key = normalized.slice(0, eq).trim();
+    if (!key) continue;
+    let value = normalized.slice(eq + 1).trim();
+    if (
+      (value.startsWith("\"") && value.endsWith("\""))
+      || (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    out.push([key, value]);
+  }
+  return out;
+}
+
+function applyEnvFile(path: string, opts: { skipKeys: ReadonlySet<string>; overrideExisting: boolean }): void {
+  let content: string;
+  try {
+    content = readFileSync(path, "utf8");
+  } catch {
+    return;
+  }
+  for (const [key, value] of parseEnvFile(content)) {
+    if (opts.skipKeys.has(key)) continue;
+    if (!opts.overrideExisting && process.env[key] !== undefined) continue;
+    process.env[key] = value;
+  }
+}
+
+/**
+ * Load API keys for the current process.
+ * Precedence (highest first): shell env, project `.scira/.env`, `~/.scira/.env`.
+ */
+export function loadSciraEnv(projectRoot = process.cwd()): void {
+  const shellKeys = new Set(Object.keys(process.env));
+  applyEnvFile(globalEnvPath, { skipKeys: shellKeys, overrideExisting: false });
+  applyEnvFile(projectEnvPath(projectRoot), { skipKeys: shellKeys, overrideExisting: true });
+}
 
 /**
  * Persist an environment key to ~/.scira/.env and apply it to the current

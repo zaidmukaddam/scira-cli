@@ -1,0 +1,70 @@
+---
+title: Configuration
+description: Global and project config files, providers, and environment variables.
+---
+
+Config merges **`~/.scira/config.json`** (global) with **`.scira/config.json`** (project). Project values override global for the same keys.
+
+## Example
+
+```json
+{
+  "llmProvider": "gateway",
+  "model": "deepseek/deepseek-v4-flash",
+  "approvalMode": "suggest",
+  "runDirectory": ".scira/runs",
+  "maxSources": 20,
+  "citationPolicy": "strict",
+  "search": {
+    "provider": "exa",
+    "maxResults": 8,
+    "includeDomains": [],
+    "excludeDomains": []
+  }
+}
+```
+
+## Fields
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `llmProvider` | `gateway` | `gateway`, `xai`, `workers-ai`, or `huggingface` |
+| `model` | `deepseek/deepseek-v4-flash` | Model ID for the active LLM provider |
+| `approvalMode` | `suggest` | `manual`, `suggest`, or `auto` tool approval |
+| `runDirectory` | `.scira/runs` | Where run data is stored |
+| `maxSources` | `20` | Max sources per research run |
+| `citationPolicy` | `strict` | `strict` or `balanced` claim citation rules |
+| `search.provider` | `exa` | `exa`, `firecrawl`, or `parallel` |
+| `search.maxResults` | `8` | Max results per web search query |
+
+## MCP servers
+
+Configure MCP in `config.json` under `mcp`. Built-in Chrome DevTools MCP can be enabled for live page research:
+
+```json
+{
+  "mcp": {
+    "chromeDevtools": {
+      "enabled": true,
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest", "--autoConnect"]
+    },
+    "servers": []
+  }
+}
+```
+
+Manage servers from the CLI:
+
+```bash
+scira mcp list
+scira mcp add http exa https://mcp.exa.ai/mcp
+scira mcp oauth parallel
+```
+
+## Inspect resolved config
+
+```bash
+scira config
+scira doctor
+```

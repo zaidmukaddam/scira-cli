@@ -160,6 +160,8 @@ export function useKeyboard(o: KeyboardOptions): void {
 
   useInput((char, key) => {
     if (char && (char.includes("[<") || /^\d+;\d+;\d+[Mm]$/u.test(char))) return;
+    // OSC background-color query responses leak as stdin when terminals reply to theme probes.
+    if (char && (/\]11;rgb:/u.test(char) || /^11;rgb:/u.test(char))) return;
     if (approvalPending) {
       if (char === "y" || char === "Y" || key.return) {
         const p = approvalPending;

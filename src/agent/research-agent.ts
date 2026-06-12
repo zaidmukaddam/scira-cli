@@ -4,16 +4,46 @@ import { ToolLoopAgent, isLoopFinished, type ToolSet } from "ai";
 import { Spinner } from "picospinner";
 import { SciraConfig } from "../types/index.js";
 import { getLanguageModel, requireLlmKeys } from "../providers/llm/registry.js";
-import { createResearchTools, createOneShotTools, createCodingTools, ApprovalCallback, EscalateCallback } from "./tools.js";
+import { createResearchTools, createOneShotTools, createCodingTools, wrapToolsForPlanMode, ApprovalCallback, EscalateCallback, type GetPlanMode } from "../tools/agent-tools.js";
 import { SKILL_CATALOG } from "./skills.js";
 import { createMcpBridge } from "../tools/mcp-bridge.js";
+import { type BackgroundTaskManager, createBackgroundTaskManager } from "../tools/background-tasks.js";
 
 export type AgentBundle<TOOLS extends ToolSet = ToolSet> = {
   agent: ToolLoopAgent<never, TOOLS>;
   close: () => Promise<void>;
 };
 
-function instructions(goal: string, config: SciraConfig, workspacePath?: string): string {
+export type AgentOptions = {
+  workspacePath?: string;
+  /** @deprecated use getPlanMode for live toggles during a turn */
+  planMode?: boolean;
+  getPlanMode?: GetPlanMode;
+  backgroundTasks?: BackgroundTaskManager;
+};
+
+function resolvePlanMode(options: AgentOptions): boolean {
+  return options.getPlanMode ? options.getPlanMode() : (options.planMode ?? false);
+}
+
+function planModeBlock(active: boolean): string {
+  if (!active) return "";
+  return `
+
+PLAN MODE (active):
+You are in plan mode. Explore and plan before making changes.
+- Use readFile, grepWorkspace, listWorkspaceDir, webSearch, and readUrl to understand the task
+- Use the todo tool to break work into trackable steps (create, mark in_progress when starting, completed when done)
+- Write or update plan.md with your approach (harness file, bare name)
+- Do NOT use writeFile or editFile except plan.md, and do not use bash action=run/background
+- Do NOT use MCP or browser tools while plan mode is active
+- Read-only bash is OK: ls, cat, git status, git log, git diff, find, grep (workspace-relative paths only)
+- When the plan is ready, summarize it and tell the user to type /plan to exit plan mode and begin execution`;
+}
+
+function instructions(goal: string, config: SciraConfig, options: AgentOptions = {}): string {
+  const { workspacePath } = options;
+  const planMode = resolvePlanMode(options);
   const now = new Date();
   const temporalContext = now.toLocaleDateString("en-US", {
     weekday: "long",
@@ -27,27 +57,30 @@ function instructions(goal: string, config: SciraConfig, workspacePath?: string)
   
   const codingSection = workspacePath ? `
 
-CODING CAPABILITIES:
-You also have workspace-aware coding tools to build, modify, and debug code:
-- readWorkspaceFile: Read any file in the workspace
-- writeWorkspaceFile: Create or overwrite files (requires approval)
-- editWorkspaceFile: Make surgical edits by replacing exact strings (requires approval)
-- listWorkspaceDir: List files and directories
-- grepWorkspace: Search for patterns across the codebase
-- runWorkspaceCommand: Execute shell commands like builds, tests, installs (requires approval)
+PROJECT LAYOUT:
+- Project root (codebase): ${workspacePath}
+- Run harness (.scira/runs/…): plan.md, notes.md, report.md, sources.jsonl, claims.jsonl, todos.json
 
-Workspace: ${workspacePath}
+FILE TOOLS:
+- readFile / writeFile / editFile route automatically:
+  - Harness files by bare name: plan.md, notes.md, report.md, sources.jsonl → stored under .scira/runs/
+  - Everything else (src/…, package.json, …) → project root
+- Never write source code under .scira. Never put harness files at the project root.
+
+CODING TOOLS:
+- listWorkspaceDir, grepWorkspace: explore the codebase
+- bash: shell in the project root. action=run (default), action=background for dev servers, action=list/output/kill for background tasks
+- runBash: shell in the run harness directory for grepping or listing harness artifacts (notes.md, sources.jsonl, etc.)
+- todo: structured task list (create, edit, mark, remove, rewrite, list)
 
 When the task involves code:
-- Use grepWorkspace and readWorkspaceFile to understand existing code structure
-- Use editWorkspaceFile for precise changes, writeWorkspaceFile for new files
-- Run tests/builds with runWorkspaceCommand to verify changes
-- Research APIs, libraries, or error messages with webSearch + readUrl when needed
-- Match existing code style and patterns
+- Use todo to track multi-step work
+- Use grepWorkspace and readFile to understand the codebase
+- Use editFile for precise changes, writeFile for new source files (paths like src/foo.ts)
+- Run tests/builds with bash; use bash action=background for servers then action=output to check logs
+- Match existing code style and patterns` : "";
 
-You can seamlessly combine research and coding - e.g., research how to implement a feature, then implement it, or debug an issue by researching the error and fixing the code.` : "";
-
-  return `You are Scira AI CLI, made by Zaid Mukaddam, an autonomous research ${workspacePath ? "and coding " : ""}agent operating inside a single run directory on the user's machine.
+  return `You are Scira AI CLI, made by Zaid Mukaddam, an autonomous research ${workspacePath ? "and coding " : ""}agent.${workspacePath ? " Source code lives at the project root; harness artifacts live under .scira/runs/." : " You operate inside a single run directory on the user's machine."}
 
 Your goal:
 ${goal}
@@ -62,7 +95,7 @@ You have shell, file, search, skill${config.files ? ", and local files" : ""}${w
 0. Bootstrap: these built-in research skills are available — pull the relevant ones with readSkill before you begin. This is mandatory — skills contain concrete tactics for search, source quality, claim verification, and report writing.
 ${SKILL_CATALOG}
 1. Plan: write a short plan.md outlining your approach (use the research-plan skill as a template).
-2. Gather: use webSearch with 3-5 parallel query variations to find real, citable sources, then readUrl to read the most relevant ones. Record findings in notes.md as you go. Never invent sources or URLs.
+2. Gather: use webSearch with 3-5 parallel query variations to find real, citable sources, then readUrl to read the most relevant ones. Use xSearch for current reactions, announcements, and real-time opinions on X/Twitter (requires XAI_API_KEY). Record findings in notes.md as you go. Never invent sources or URLs.
 3. Extract claims: after reading each source, use createClaim to record significant findings. Assign a short ID like claim_001, set confidence, and link source IDs.
 4. Verify: once all claims are recorded, use verifyClaim to update each claim's status (verified / weak / contradicted / needs_review). Be honest — flag weak or vendor-only evidence.
 5. Record sources: write all sources you actually used to sources.jsonl (include the snapshotPath reported by readUrl for each one) — STRICT JSONL rules: one compact JSON object per line, no literal newlines inside string values, no trailing commas. Use writeFile to write the entire file at once.
@@ -71,10 +104,10 @@ ${SKILL_CATALOG}
 
 Rules:
 - Prefer primary sources. Cross-check important claims across multiple sources.
-- Keep files inside the run directory (paths are relative to it).
+${workspacePath ? "- Harness files (plan.md, notes.md, report.md, sources.jsonl) go in the run directory. All source code changes go under the project root." : "- Keep files inside the run directory (paths are relative to it)."}
 - Be terse in your narration between tool calls — say what you're doing and why in one line.
 - Do not claim something is done before you have actually written report.md.
-- Re-read a skill with readSkill any time you are uncertain how to proceed.`;
+- Re-read a skill with readSkill any time you are uncertain how to proceed.${planModeBlock(planMode ?? false)}`;
 }
 
 function devtoolsInstructionsBlock(toolNames: string[]): string {
@@ -118,23 +151,34 @@ export async function createResearchAgent(
   goal: string,
   config: SciraConfig,
   onApprovalRequired?: ApprovalCallback,
-  workspacePath?: string
+  options: AgentOptions = {}
 ): Promise<AgentBundle> {
   requireLlmKeys(config);
   const bridge = await createMcpBridge(config);
-  const researchTools = createResearchTools(runPath, config, onApprovalRequired);
-  const codingTools = workspacePath ? createCodingTools(workspacePath, config, onApprovalRequired) : {};
-  const tools = { ...researchTools, ...codingTools, ...bridge.tools } as ToolSet;
+  const getPlanMode = options.getPlanMode ?? (() => options.planMode ?? false);
+  const researchTools = createResearchTools(runPath, config, onApprovalRequired, options.workspacePath, getPlanMode);
+  const codingTools = options.workspacePath
+    ? createCodingTools(options.workspacePath, config, onApprovalRequired, options.backgroundTasks, runPath, getPlanMode)
+    : {};
+  const tools = { ...researchTools, ...codingTools, ...wrapToolsForPlanMode(bridge.tools, getPlanMode) } as ToolSet;
+  const bgContext = options.backgroundTasks ? await options.backgroundTasks.formatContextForAgent() : "";
   const agent = new ToolLoopAgent({
     model: getLanguageModel(config),
-    instructions: instructions(goal, config, workspacePath) + devtoolsInstructionsBlock(bridge.toolNames),
+    instructions: instructions(goal, config, options) + bgContext + devtoolsInstructionsBlock(bridge.toolNames),
     tools,
     stopWhen: isLoopFinished()
   });
   return { agent, close: bridge.close };
 }
 
-function oneShotInstructions(goal: string, hasDevtools: boolean): string {
+function oneShotInstructions(goal: string, hasDevtools: boolean, options: AgentOptions = {}): string {
+  const { workspacePath } = options;
+  const planMode = resolvePlanMode(options);
+  const codingHint = workspacePath ? `
+
+Project root: ${workspacePath}. readFile/writeFile/editFile route code paths to the project root; harness files (plan.md, notes.md, …) stay under .scira/runs/.
+- listWorkspaceDir, grepWorkspace, bash (with background tasks), todo
+Use them for code questions, debugging, and implementation tasks.` : "";
   const now = new Date();
   const temporalContext = now.toLocaleDateString("en-US", {
     weekday: "long",
@@ -169,10 +213,10 @@ Step 1 — Decide the depth required:
 - When in doubt, escalate.${browserHint}
 
 Step 2 — If you decide to answer directly:
-- Default path: use webSearch (2-3 query variations) to find relevant, recent sources, then readUrl to read the best 1-2.
+- Default path: use webSearch (2-3 query variations) to find relevant, recent sources, then readUrl to read the best 1-2. Use xSearch to surface real-time X posts when the question involves public reactions, announcements, or social discussions.
 - Browser path (only if the routing rules above triggered): use the devtools_* tools to drive a real Chromium session, then summarize what you observed (cite the URL you visited).
 - Synthesize a clear, direct answer in a few short paragraphs. Cite sources inline as [title](url). Never invent sources or URLs.
-- Do NOT write files, create claims, or produce a formal report — just answer in chat.`;
+- Do NOT write files, create claims, or produce a formal report — just answer in chat.${codingHint}${planModeBlock(planMode ?? false)}`;
 }
 
 export async function createOneShotAgent(
@@ -180,14 +224,28 @@ export async function createOneShotAgent(
   goal: string,
   config: SciraConfig,
   onApprovalRequired?: ApprovalCallback,
-  onEscalate?: EscalateCallback
+  onEscalate?: EscalateCallback,
+  options: AgentOptions = {}
 ): Promise<AgentBundle> {
   requireLlmKeys(config);
   const bridge = await createMcpBridge(config);
-  const tools = { ...createOneShotTools(runPath, config, onApprovalRequired, onEscalate), ...bridge.tools } as ToolSet;
+  const getPlanMode = options.getPlanMode ?? (() => options.planMode ?? false);
+  const tools = {
+    ...createOneShotTools(
+      runPath,
+      config,
+      onApprovalRequired,
+      onEscalate,
+      options.workspacePath,
+      options.backgroundTasks,
+      getPlanMode
+    ),
+    ...wrapToolsForPlanMode(bridge.tools, getPlanMode)
+  } as ToolSet;
+  const bgContext = options.backgroundTasks ? await options.backgroundTasks.formatContextForAgent() : "";
   const agent = new ToolLoopAgent({
     model: getLanguageModel(config),
-    instructions: oneShotInstructions(goal, bridge.toolNames.length > 0) + devtoolsInstructionsBlock(bridge.toolNames),
+    instructions: oneShotInstructions(goal, bridge.toolNames.length > 0, options) + bgContext + devtoolsInstructionsBlock(bridge.toolNames),
     tools,
     stopWhen: isLoopFinished()
   });
@@ -198,6 +256,15 @@ export async function createOneShotAgent(
  * Run the research agent headlessly, streaming a compact timeline to stdout.
  */
 export async function runResearchAgent(runPath: string, goal: string, config: SciraConfig, workspacePath?: string): Promise<void> {
+  const options: AgentOptions = {
+    ...(workspacePath
+      ? {
+          workspacePath,
+          backgroundTasks: createBackgroundTaskManager(runPath, workspacePath)
+        }
+      : {}),
+    getPlanMode: () => false
+  };
   const spinner = new Spinner();
 
   const onApprovalRequired: ApprovalCallback = async (toolName, description) => {
@@ -214,7 +281,7 @@ export async function runResearchAgent(runPath: string, goal: string, config: Sc
     return approved;
   };
 
-  const bundle = await createResearchAgent(runPath, goal, config, onApprovalRequired, workspacePath);
+  const bundle = await createResearchAgent(runPath, goal, config, onApprovalRequired, options);
   try {
     const result = await bundle.agent.stream({ prompt: goal });
 
@@ -253,6 +320,7 @@ const TOOL_ICONS: Record<string, string> = {
   createClaim: "◎",
   verifyClaim: "✓",
   webSearch: "⌕",
+  xSearch: "𝕏",
   readUrl: "↗",
   listSkills: "★",
   readSkill: "★",
@@ -261,12 +329,20 @@ const TOOL_ICONS: Record<string, string> = {
   getFile: "▤",
   fileExists: "▤",
   moveFile: "✎",
-  deleteFile: "✗"
+  deleteFile: "✗",
+  todo: "☐"
 };
 
 function summarize(input: unknown): string {
   const obj = (input ?? {}) as Record<string, unknown>;
-  return String(obj.command ?? obj.query ?? obj.url ?? obj.path ?? obj.key ?? obj.pattern ?? obj.source ?? "").slice(0, 100);
+  if (obj.action && obj.action !== "run") {
+    return `${obj.action}${obj.taskId ? ` ${obj.taskId}` : ""}`.slice(0, 100);
+  }
+  if (Array.isArray(obj.queries)) {
+    const qs = obj.queries as string[];
+    return (qs.slice(0, 2).join(" · ") + (qs.length > 2 ? ` +${qs.length - 2}` : "")).slice(0, 100);
+  }
+  return String(obj.command ?? obj.query ?? obj.url ?? obj.path ?? obj.key ?? obj.pattern ?? obj.source ?? obj.action ?? "").slice(0, 100);
 }
 
 const CODING_ICONS: Record<string, string> = {
@@ -274,6 +350,5 @@ const CODING_ICONS: Record<string, string> = {
   writeWorkspaceFile: "✎",
   editWorkspaceFile: "✎",
   listWorkspaceDir: "▤",
-  grepWorkspace: "⌕",
-  runWorkspaceCommand: "⌘"
+  grepWorkspace: "⌕"
 };

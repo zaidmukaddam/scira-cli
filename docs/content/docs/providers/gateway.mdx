@@ -1,0 +1,81 @@
+---
+title: Vercel AI Gateway
+description: Route calls to hundreds of model providers through a single Vercel API key.
+---
+
+Vercel AI Gateway is the default LLM provider in Scira. It's a unified proxy that gives access to models from Anthropic, OpenAI, Google, DeepSeek, xAI, and others — all through one key, with built-in caching, load balancing, and usage monitoring.
+
+## Get a key
+
+<Steps>
+
+<Step>
+
+### Sign in to Vercel
+
+Go to [vercel.com](https://vercel.com) and sign in. The free tier is enough to get started.
+
+</Step>
+
+<Step>
+
+### Open AI Gateway
+
+From your team dashboard, navigate to **AI Gateway** in the sidebar.
+
+</Step>
+
+<Step>
+
+### Create an API key
+
+Under **API Keys**, click **Create Key**. The key starts with `sk-`. Copy it now — it is only shown once.
+
+</Step>
+
+<Step>
+
+### Add the key to Scira
+
+```bash
+scira init
+# or manually:
+echo "AI_GATEWAY_API_KEY=sk-..." >> ~/.scira/.env
+```
+
+</Step>
+
+</Steps>
+
+## Configure
+
+```json title="~/.scira/config.json"
+{
+  "llmProvider": "gateway",
+  "model": "deepseek/deepseek-v4-flash"
+}
+```
+
+Switch to this provider from the TUI with `/llm` → **Vercel AI Gateway**.
+
+## Choosing a model
+
+Run `/model` in the TUI to open the live picker — it fetches the current list from the gateway and filters to models that declare tool-use support. The full browsable catalog is at [vercel.com/ai-gateway/models](https://vercel.com/ai-gateway/models).
+
+Notable models available as of June 2026:
+
+| Model ID | Notes |
+| --- | --- |
+| `deepseek/deepseek-v4-flash` | **Default.** Most popular on the gateway, fast and cheap |
+| `deepseek/deepseek-v4-pro` | DeepSeek's top-tier V4 model — 1M context, complex reasoning |
+| `anthropic/claude-fable-5` | Claude Fable 5, Anthropic's latest long-context model |
+| `anthropic/claude-sonnet-4-6` | Strong reasoning, high quality |
+| `openai/gpt-5.5` | OpenAI's current flagship |
+| `google/gemini-2.5-flash` | Google fast-tier Gemini |
+| `xai/grok-4.3` | xAI Grok via gateway (no separate XAI key needed) |
+
+The live list from `/model` is authoritative — the table above is a snapshot.
+
+## Pricing
+
+Vercel AI Gateway bills at pass-through rates from the underlying provider — no extra gateway fee on the free tier. See [vercel.com/docs/ai-gateway](https://vercel.com/docs/ai-gateway) for current details.

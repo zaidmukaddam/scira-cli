@@ -6,7 +6,7 @@ export const FILE_MENTION_MAX_CHARS = 20000;
 export const FILE_MENTION_SKIP = new Set([".git", "node_modules", "dist", ".scira"]);
 export const PROVIDERS: SearchProvider[] = ["parallel", "exa", "firecrawl"];
 
-export const CHAT_COMMANDS = ["/help", "/home", "/new", "/rerun", "/report", "/sources", "/claims", "/why", "/mcp", "/copy", "/usage", "/rename", "/model", "/llm", "/provider", "/theme", "/key", "/keys", "/stop", "/back", "/quit"];
+export const CHAT_COMMANDS = ["/help", "/home", "/new", "/plan", "/rerun", "/report", "/sources", "/claims", "/why", "/mcp", "/copy", "/usage", "/rename", "/model", "/llm", "/provider", "/theme", "/key", "/keys", "/stop", "/back", "/quit"];
 
 /** Slash commands that take an argument; ⏎ from the menu appends a space instead of running. */
 export const COMMANDS_NEEDING_ARGS = new Set(["/theme", "/key", "/rename", "/why"]);
@@ -14,6 +14,7 @@ export const COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/help": "Show command and keyboard shortcuts.",
   "/home": "Go to the home screen (or show the welcome card on home).",
   "/new": "Go to the home screen to start a new research run.",
+  "/plan": "Toggle plan mode (explore and plan before making changes).",
   "/rerun": "Run the research agent again for this run.",
   "/report": "Show the generated report.md in the timeline.",
   "/sources": "List the run's gathered sources with links.",
@@ -28,7 +29,7 @@ export const COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/provider": "Open the search provider selector.",
   "/theme": "Set UI theme: /theme dark · /theme light · /theme auto",
   "/key": "Save an API key, e.g. /key EXA_API_KEY ...",
-  "/keys": "Show which required API keys are set.",
+  "/keys": "Show API key status and where to get missing keys.",
   "/stop": "Abort the currently running agent turn.",
   "/back": "Return to the sessions list.",
   "/quit": "Quit the TUI."
@@ -36,6 +37,7 @@ export const COMMAND_DESCRIPTIONS: Record<string, string> = {
 
 export const TOOL_ICONS: Record<string, string> = {
   bash: "$",
+  runBash: "$",
   writeFile: "✎",
   editFile: "✎",
   readFile: "▤",
@@ -44,7 +46,13 @@ export const TOOL_ICONS: Record<string, string> = {
   webSearch: "⌕",
   readUrl: "↗",
   listSkills: "★",
-  readSkill: "★"
+  readSkill: "★",
+  todo: "☐",
+  readWorkspaceFile: "▤",
+  writeWorkspaceFile: "✎",
+  editWorkspaceFile: "✎",
+  listWorkspaceDir: "▤",
+  grepWorkspace: "⌕"
 };
 
 export const SPINNER_FRAMES = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"] as const;

@@ -1,0 +1,107 @@
+---
+title: Plan mode
+description: How plan mode works — what the agent can and cannot do, and how to use it.
+---
+
+Plan mode lets the agent explore and plan without making any changes. It is designed for code agent sessions where you want to understand the scope of a task before any files are touched or commands are run.
+
+## Activating and exiting
+
+From the TUI, toggle plan mode with the `/plan` slash command. The status bar shows `PLAN` when active. You can also start a session in plan mode:
+
+```bash
+scira --workspace . --plan "refactor the auth module"
+```
+
+Plan mode is a live toggle, not a session-level switch. You can enter and exit it freely within a single run.
+
+## What the agent can do in plan mode
+
+Read-only operations run without restriction:
+
+- `webSearch`, `xSearch`, `readUrl` — search and fetch sources
+- `readFile`, `readWorkspaceFile` — read any file
+- `listWorkspaceDir`, `grepWorkspace` — explore the codebase
+- `listSkills`, `readSkill` — access research tactics
+- `todo` — create and update the task list
+- `bash` / `runWorkspaceCommand` — **limited** (see below)
+
+The agent is instructed to use this window to write `plan.md` and build a todo list before proposing changes.
+
+## Bash in plan mode
+
+Shell commands are gated to a read-only allowlist:
+
+| Allowed commands | Notes |
+| --- | --- |
+| `ls`, `cat`, `head`, `tail`, `wc` | File inspection |
+| `grep`, `rg` | Pattern search |
+| `find` | Without `-exec`, `-delete`, `-ok` flags |
+| `pwd`, `file`, `stat`, `tree`, `which` | Filesystem metadata |
+| `git status`, `git log`, `git diff`, `git show` | Read-only git |
+
+Anything else — pipes, redirects, subshells, absolute paths, `..`, `$HOME` — is rejected. The check runs before the approval gate, so it cannot be approved through.
+
+## What is blocked
+
+Every tool with a write side effect returns `PLAN_MODE_MSG` immediately:
+
+- `writeFile` — **except** `plan.md`, which may be written freely
+- `editFile` — blocked for all files including `plan.md`
+- `bash action=run` with non-read-only commands — blocked
+- `bash action=background` — blocked
+- All MCP tools — blocked (wrapped by `wrapToolsForPlanMode`)
+- `createClaim`, `verifyClaim` — blocked
+- `moveFile`, `deleteFile` — blocked
+
+## How it works internally
+
+`wrapToolsForPlanMode` in `src/tools/agent-tools.ts` wraps every tool not in `PLAN_MODE_UNRESTRICTED`. The wrapper checks `getPlanMode()` at call time — it's a live function reference, not a snapshot — so toggling `/plan` takes effect immediately on the next tool call without restarting the agent.
+
+```ts
+// Simplified
+execute: async (input, options) => {
+  if (getPlanMode()) return PLAN_MODE_MSG;
+  return original(input, options);
+}
+```
+
+`writeFile` has a separate path-aware check that allows `plan.md` even in plan mode, since the whole point of the mode is to produce a plan document.
+
+## Typical workflow
+
+<Steps>
+
+<Step>
+
+### Enter plan mode
+
+Type `/plan` in the TUI. The model receives the `PLAN MODE (active)` section of its system prompt, which tells it what it can and cannot do.
+
+</Step>
+
+<Step>
+
+### Agent explores
+
+The agent searches, reads files, runs `grep` and `git` commands, and builds understanding. It writes `plan.md` with an approach outline and uses `todo` to create a step-by-step task list.
+
+</Step>
+
+<Step>
+
+### Review the plan
+
+Read `plan.md` directly or use `scira show <run-id>` to inspect it. The TUI shows the plan in the feed as the agent writes it.
+
+</Step>
+
+<Step>
+
+### Exit plan mode and execute
+
+Type `/plan` again to toggle off. The agent sees the updated system prompt without the plan mode block and proceeds to execute the tasks in its todo list.
+
+</Step>
+
+</Steps>
