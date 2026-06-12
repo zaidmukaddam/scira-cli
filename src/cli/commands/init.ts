@@ -285,6 +285,7 @@ export async function initCommand() {
       model: defaultModelFor(llmProvider as LlmProvider),
       lastModels: {},
       approvalMode: "suggest",
+      alwaysAllowLinks: false,
       runDirectory: ".scira/runs",
       maxSources: 20,
       citationPolicy: "strict",
@@ -378,6 +379,7 @@ export async function initCommand() {
     model,
     lastModels: { [llmProvider as LlmProvider]: model, ...(existingConfig?.lastModels || {}) },
     approvalMode: approvalMode as "manual" | "suggest" | "auto",
+    alwaysAllowLinks: existingConfig?.alwaysAllowLinks ?? false,
     search: {
       provider: searchProvider as SearchProvider,
       maxResults: existingConfig?.search?.maxResults || 8,

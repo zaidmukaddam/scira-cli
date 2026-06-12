@@ -10,6 +10,7 @@ type XPostGroup = { query?: string; dateRange?: string; posts?: XPost[]; error?:
 
 /** Tools that start collapsed in the timeline (long output). */
 export const DEFAULT_COLLAPSED_TOOLS = new Set([
+  "webSearch",
   "readUrl",
   "readFile",
   "readWorkspaceFile",

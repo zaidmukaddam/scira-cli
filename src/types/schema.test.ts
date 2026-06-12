@@ -64,6 +64,7 @@ describe("SciraConfigSchema", () => {
     const config = SciraConfigSchema.parse({});
     expect(config.llmProvider).toBe("gateway");
     expect(config.approvalMode).toBe("suggest");
+    expect(config.alwaysAllowLinks).toBe(false);
     expect(config.runDirectory).toBe(".scira/runs");
     expect(config.maxSources).toBe(20);
   });

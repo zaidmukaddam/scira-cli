@@ -1,15 +1,19 @@
 import React, { useMemo } from "react";
 import { Text } from "ink";
+import Link from "ink-link";
 import { type FeedItem } from "../types.js";
 import { type SciraConfig } from "../../../types/index.js";
 import { S_BAR, TOOL_ICONS, SPINNER_FRAMES } from "../constants.js";
-import { formatTime, fmtDuration, wrapText, hyperlink, displayWidth } from "../lib/utils.js";
+import { formatTime, fmtDuration, wrapText, computeLineLinks, displayWidth } from "../lib/utils.js";
+import type { LineLink } from "../lib/utils.js";
+import type { MdSeg } from "../lib/markdown.js";
 import {
   formatToolResultLines, formatToolResultPreview, feedToolItemId,
   isCollapsibleToolName, isToolItemCollapsed,
 } from "../lib/tool-result.js";
 import { markdownToSegLines } from "../lib/markdown.js";
 import { useTheme } from "./use-theme.js";
+import type { ThemeColors } from "../theme.js";
 
 export type GroupInfo = { stepLabels: string[]; itemCount: number; active: boolean; end: number };
 
@@ -46,10 +50,33 @@ type EffFeedItem = { _tag: "fi"; idx: number; item: FeedItem };
 type EffItem = EffFeedItem | GroupHeader;
 const isGH = (item: EffItem): item is GroupHeader => item._tag === "gh";
 
+function renderSegNodes(segs: MdSeg[], theme: ThemeColors, defaultColor: string): React.ReactNode[] {
+  return segs.map((s, i) => {
+    const inner = (
+      <Text
+        color={s.url ? (s.color ?? theme.accent) : (s.color ?? defaultColor)}
+        bold={s.bold}
+        italic={s.italic}
+        underline={s.url ? true : s.underline}
+        dimColor={s.dim}
+      >
+        {s.text}
+      </Text>
+    );
+    // For URL segments, emit an OSC 8 terminal hyperlink so the terminal itself makes the
+    // text clickable (Cmd/Ctrl-click). fallback={false} keeps the visible text unchanged so
+    // the pre-computed line widths still hold on terminals without hyperlink support.
+    return s.url
+      ? <Link key={i} url={s.url} fallback={false}>{inner}</Link>
+      : React.cloneElement(inner, { key: i });
+  });
+}
+
 export type FeedLinesResult = {
   lines: React.ReactNode[];
   toggleAtLine: Map<number, string>;
   groupToggleAtLine: Map<number, number>;
+  linkAtLine: Map<number, LineLink[]>;
 };
 
 export function useFeedLines(
@@ -70,6 +97,7 @@ export function useFeedLines(
     const lines: React.ReactNode[] = [];
     const toggleAtLine = new Map<number, string>();
     const groupToggleAtLine = new Map<number, number>();
+    const linkAtLine = new Map<number, LineLink[]>();
     let key = 0;
     const { groupOf, groups } = computeGroups(feed);
 
@@ -205,21 +233,14 @@ export function useFeedLines(
             lines.push(<Text key={key++} color={theme.textDim}>{S_BAR}</Text>);
             continue;
           }
+          const prefix = `${S_BAR} `;
+          const lineIdx = lines.length;
+          const links = computeLineLinks(row, displayWidth(prefix));
+          if (links.length > 0) linkAtLine.set(lineIdx, links);
           lines.push(
             <Text key={key++} wrap="truncate-end">
-              <Text color={theme.textDim}>{S_BAR} </Text>
-              {row.map((s, i) => (
-                <Text
-                  key={i}
-                  color={s.color ?? theme.textDim}
-                  bold={s.bold}
-                  italic={s.italic}
-                  underline={s.underline}
-                  dimColor={s.dim}
-                >
-                  {hyperlink(s.text, s.url)}
-                </Text>
-              ))}
+              <Text color={theme.textDim}>{prefix}</Text>
+              {renderSegNodes(row, theme, theme.textDim)}
             </Text>
           );
         }
@@ -262,30 +283,33 @@ export function useFeedLines(
             lines.push(<Text key={key++} color={theme.textDim}>{S_BAR}</Text>);
             continue;
           }
+          const prefix = "│ ";
+          const lineIdx = lines.length;
+          const links = computeLineLinks(segLine, displayWidth(prefix));
+          if (links.length > 0) linkAtLine.set(lineIdx, links);
           lines.push(
             <Text key={key++} color={theme.textDim} italic wrap="truncate-end">
-              <Text color={theme.textDim}>{"│ "}</Text>
-              {segLine.map((s, i) => (
-                <Text key={i} color={theme.textDim} bold={s.bold} italic={s.italic ?? true} underline={s.underline}>{hyperlink(s.text, s.url)}</Text>
-              ))}
+              <Text color={theme.textDim}>{prefix}</Text>
+              {renderSegNodes(segLine, theme, theme.textDim)}
             </Text>
           );
         }
       } else {
         for (const segLine of markdownToSegLines(fi.text, innerWidth - 2, theme)) {
           if (segLine.length === 0) { lines.push(<Text key={key++}>{" "}</Text>); continue; }
+          const lineIdx = lines.length;
+          const links = computeLineLinks(segLine, 0);
+          if (links.length > 0) linkAtLine.set(lineIdx, links);
           lines.push(
             <Text key={key++} wrap="truncate-end">
-              {segLine.map((s, i) => (
-                <Text key={i} color={s.color ?? theme.text} bold={s.bold} italic={s.italic} underline={s.underline} dimColor={s.dim}>{hyperlink(s.text, s.url)}</Text>
-              ))}
+              {renderSegNodes(segLine, theme, theme.text)}
             </Text>
           );
         }
       }
     });
 
-    return { lines, toggleAtLine, groupToggleAtLine };
+    return { lines, toggleAtLine, groupToggleAtLine, linkAtLine };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feed, innerWidth, reasoningTick, spinnerFrame, collapsedGroups, focusedGroupKey, itemExpandState, hoveredLineIdx, config, theme]);
 }

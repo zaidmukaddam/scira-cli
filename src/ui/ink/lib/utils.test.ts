@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { summarizeToolInput, summarizeToolOutput } from "./utils.js";
+import { summarizeToolInput, summarizeToolOutput, ansiHyperlink, computeLineLinks, linkAtMouseColumn } from "./utils.js";
+
+describe("hyperlink helpers", () => {
+  it("wraps OSC 8 around styled link text", () => {
+    const out = ansiHyperlink("docs", "https://example.com", { color: "#FFE0C2", underline: true });
+    expect(out).toContain("\x1b]8;;https://example.com\x1b\\");
+    expect(out).toContain("docs");
+    expect(out).toContain("\x1b]8;;\x1b\\");
+  });
+
+  it("maps mouse column to link url", () => {
+    const links = computeLineLinks([
+      { text: "see " },
+      { text: "docs", url: "https://example.com" },
+    ], 2);
+    expect(links).toEqual([{ start: 6, end: 9, url: "https://example.com" }]);
+    expect(linkAtMouseColumn(links, 7)).toBe("https://example.com");
+    expect(linkAtMouseColumn(links, 3)).toBeUndefined();
+  });
+});
 
 describe("summarizeToolInput", () => {
   it("formats webSearch queries", () => {

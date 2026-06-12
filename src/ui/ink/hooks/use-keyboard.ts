@@ -1,6 +1,6 @@
 import React, { useRef } from "react";
 import { useInput } from "ink";
-import { type Screen, type ApprovalPending } from "../types.js";
+import { type Screen, type ApprovalPending, type LinkPending } from "../types.js";
 import { type RunState } from "../../../types/index.js";
 import { COMMANDS_NEEDING_ARGS } from "../constants.js";
 import { type Menu } from "./use-settings.js";
@@ -30,6 +30,10 @@ export type KeyboardInputOptions = {
 export type KeyboardDialogOptions = {
   approvalPending: ApprovalPending | null;
   setApprovalPending: React.Dispatch<React.SetStateAction<ApprovalPending | null>>;
+  linkPending: LinkPending | null;
+  setLinkPending: React.Dispatch<React.SetStateAction<LinkPending | null>>;
+  onConfirmLink: () => void;
+  onAlwaysAllowLinks: () => void;
   menu: Menu | null;
   setMenu: React.Dispatch<React.SetStateAction<Menu | null>>;
   applyMenuSelection: (menu: Menu) => Promise<void>;
@@ -100,7 +104,8 @@ export function useKeyboard(o: KeyboardOptions): void {
   const { screen, setNotice, exit } = o;
   const { text: inputText, setText: setInputText, cursorPos, setCursorPos, history: inputHistory, historyIndex, setHistoryIndex } = o.input;
   const {
-    approvalPending, setApprovalPending, menu, setMenu, applyMenuSelection, helpOpen, setHelpOpen,
+    approvalPending, setApprovalPending, linkPending, setLinkPending, onConfirmLink, onAlwaysAllowLinks,
+    menu, setMenu, applyMenuSelection, helpOpen, setHelpOpen,
     mcpOpen, setMcpOpen, mcpRowIdx, setMcpRowIdx, mcpRowCount, toggleMcpRow, removeMcpRow,
   } = o.dialogs;
   const { activeSuggestions, activeSuggestionKind, commandMenuIndex, setCommandMenuIndex, acceptActiveSuggestion } = o.suggestions;
@@ -171,6 +176,16 @@ export function useKeyboard(o: KeyboardOptions): void {
         const p = approvalPending;
         setApprovalPending(null);
         p.resolve(false);
+      }
+      return;
+    }
+    if (linkPending) {
+      if (char === "a" || char === "A") {
+        onAlwaysAllowLinks();
+      } else if (char === "y" || char === "Y" || key.return) {
+        onConfirmLink();
+      } else if (char === "n" || char === "N" || key.escape) {
+        setLinkPending(null);
       }
       return;
     }

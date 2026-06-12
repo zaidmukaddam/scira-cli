@@ -58,11 +58,11 @@ describe("formatToolResultLines", () => {
     expect(formatToolResultPreview("readUrl", "https://example.com", result, "done")).toContain("Example");
   });
 
-  it("defaults readUrl collapsed and webSearch expanded", () => {
+  it("defaults readUrl and webSearch collapsed", () => {
     expect(defaultCollapsedToolName("readUrl")).toBe(true);
-    expect(defaultCollapsedToolName("webSearch")).toBe(false);
+    expect(defaultCollapsedToolName("webSearch")).toBe(true);
     expect(isToolItemCollapsed("id", "readUrl", "done", new Map())).toBe(true);
-    expect(isToolItemCollapsed("id", "webSearch", "done", new Map())).toBe(false);
+    expect(isToolItemCollapsed("id", "webSearch", "done", new Map())).toBe(true);
     expect(isToolItemCollapsed("id", "readUrl", "done", new Map([["id", true]]))).toBe(false);
   });
 });

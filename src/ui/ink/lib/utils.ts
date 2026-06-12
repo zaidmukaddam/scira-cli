@@ -140,9 +140,75 @@ export function relativeTime(ms: number): string {
 }
 
 /** Wrap text in an OSC 8 terminal hyperlink (clickable in supported terminals). */
+export type LineLink = { start: number; end: number; url: string };
+
+function colorToAnsi(color?: string): number[] {
+  if (!color) return [];
+  const hex = /^#([0-9a-f]{6})$/i.exec(color);
+  if (hex) {
+    const n = hex[1];
+    return [38, 2, parseInt(n.slice(0, 2), 16), parseInt(n.slice(2, 4), 16), parseInt(n.slice(4, 6), 16)];
+  }
+  const ansi256 = /^ansi256\((\d+)\)$/i.exec(color);
+  if (ansi256) return [38, 5, parseInt(ansi256[1], 10)];
+  const named: Record<string, number> = {
+    red: 31, green: 32, yellow: 33, blue: 34, magenta: 35, cyan: 36,
+    gray: 90, white: 97, black: 30,
+  };
+  const code = named[color.toLowerCase()];
+  return code ? [code] : [];
+}
+
+/** OSC 8 link with inline ANSI styling — avoids Ink Text props breaking the escape sequence. */
+export function ansiHyperlink(
+  text: string,
+  url: string,
+  style?: { color?: string; bold?: boolean; underline?: boolean; dim?: boolean; italic?: boolean },
+): string {
+  const params: number[] = [];
+  if (style?.bold) params.push(1);
+  if (style?.dim) params.push(2);
+  if (style?.italic) params.push(3);
+  if (style?.underline !== false) params.push(4);
+  params.push(...colorToAnsi(style?.color));
+  const styled = params.length > 0 ? `\x1b[${params.join(";")}m${text}\x1b[0m` : text;
+  return `\x1b]8;;${url}\x1b\\${styled}\x1b]8;;\x1b\\`;
+}
+
 export function hyperlink(text: string, url?: string): string {
   if (!url) return text;
-  return `\x1b]8;;${url}\x1b\\${text}\x1b]8;;\x1b\\`;
+  return ansiHyperlink(text, url, { underline: true });
+}
+
+export function computeLineLinks(segs: ReadonlyArray<{ text: string; url?: string }>, prefixCols = 0): LineLink[] {
+  const links: LineLink[] = [];
+  let col = prefixCols;
+  for (const s of segs) {
+    const w = displayWidth(s.text);
+    if (s.url && w > 0) links.push({ start: col, end: col + w - 1, url: s.url });
+    col += w;
+  }
+  return links;
+}
+
+/** Match an SGR mouse column (1-based) against link regions from computeLineLinks. */
+export function linkAtMouseColumn(links: ReadonlyArray<LineLink>, x: number): string | undefined {
+  for (const l of links) {
+    if (x >= l.start + 1 && x <= l.end + 1) return l.url;
+  }
+  return undefined;
+}
+
+/** Open a URL in the system browser. */
+export function openExternalUrl(url: string): Promise<boolean> {
+  return new Promise((res) => {
+    const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+    const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+    const child = spawn(cmd, args, { stdio: "ignore", detached: true });
+    child.on("error", () => res(false));
+    child.on("close", (code) => res(code === 0));
+    child.unref();
+  });
 }
 
 /** True if the prompt clearly asks for full, report-grade research. */

@@ -13,7 +13,6 @@ type SessionOptions = {
   feedRef: React.RefObject<FeedItem[]>;
   turnsRef: React.RefObject<TurnUsage[]>;
   startedRef: React.RefObject<string | undefined>;
-  runTurnRef: React.RefObject<(prompt: string) => Promise<void>>;
   setSessions: (sessions: RunState[]) => void;
   setRunState: React.Dispatch<React.SetStateAction<RunState | null>>;
   setCurrentRunPath: (path: string | undefined) => void;
@@ -30,13 +29,15 @@ type SessionOptions = {
   getSubscriber: () => SessionSubscriber;
 };
 
+export type OpenRunResult = { startPrompt: string };
+
 export function useSession(o: SessionOptions): {
   refreshSessions: () => Promise<void>;
   refreshRun: () => Promise<void>;
-  openRun: (runPath: string, initialQuestion?: string) => Promise<void>;
+  openRun: (runPath: string, initialQuestion?: string) => Promise<OpenRunResult | undefined>;
 } {
   const {
-    config, currentRunPath, conversationRef, feedRef, turnsRef, startedRef, runTurnRef,
+    config, currentRunPath, conversationRef, feedRef, turnsRef, startedRef,
     setSessions, setRunState, setCurrentRunPath, setInputText, setCursorPos,
     setFeed, setUsage, setScrollOffset, setScreen, setMode, setPlanMode,
     setBusy, setApprovalPending, getSubscriber,
@@ -52,7 +53,7 @@ export function useSession(o: SessionOptions): {
     if (currentRunPath) setRunState(await summarizeRun(currentRunPath));
   }, [currentRunPath]);
 
-  const openRun = useCallback(async (runPath: string, initialQuestion?: string) => {
+  const openRun = useCallback(async (runPath: string, initialQuestion?: string): Promise<OpenRunResult | undefined> => {
     if (runPath !== currentRunPath) setPlanMode(false);
     setCurrentRunPath(runPath);
     setInputText("");
@@ -74,7 +75,7 @@ export function useSession(o: SessionOptions): {
       if (live.approvalPending) setApprovalPending(live.approvalPending);
       const resumedState = await summarizeRun(runPath).catch(() => null);
       setRunState(resumedState);
-      return;
+      return undefined;
     }
 
     try {
@@ -94,7 +95,7 @@ export function useSession(o: SessionOptions): {
         const resumedState = await summarizeRun(runPath).catch(() => null);
         setRunState(resumedState);
         setMode((resumedState?.claimCount ?? 0) > 0 || (resumedState?.sourceCount ?? 0) > 0);
-        return;
+        return undefined;
       }
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
@@ -106,7 +107,7 @@ export function useSession(o: SessionOptions): {
         startedRef.current = runPath;
         setScrollOffset(0);
         setScreen("chat");
-        return;
+        return undefined;
       }
     }
 
@@ -125,19 +126,17 @@ export function useSession(o: SessionOptions): {
         return mcpCount > 0 ? [`${mcpCount} mcp`] : [];
       })(),
     ].join("  ·  ");
-    const freshFeed: FeedItem[] = initialQuestion
-      ? [{ kind: "user", text: initialQuestion, ts: Date.now() }, { kind: "status", text: startStatus }]
+    const summary = await summarizeRun(runPath).catch(() => null);
+    const prompt = initialQuestion ?? summary?.goal;
+    const freshFeed: FeedItem[] = prompt
+      ? [{ kind: "user", text: prompt, ts: Date.now() }, { kind: "status", text: startStatus }]
       : [{ kind: "status", text: startStatus }];
     setFeed(freshFeed);
     feedRef.current = freshFeed;
     setScrollOffset(0);
     setScreen("chat");
-    void (async () => {
-      await summarizeRun(runPath).then(setRunState).catch(() => { });
-      // Attach subscriber BEFORE starting the turn so no items are emitted without a listener.
-      attachSubscriber(runPath, getSubscriber());
-      await runTurnRef.current("Answer my question concisely using web search. If it genuinely needs deep, multi-source, verifiable research, call requestFullResearch to ask me to approve the full research harness.");
-    })();
+    if (summary) setRunState(summary);
+    return prompt ? { startPrompt: prompt } : undefined;
   }, [config, currentRunPath, setCurrentRunPath, setInputText, setCursorPos, setFeed, setUsage, setScrollOffset,
       setScreen, setRunState, setMode, setPlanMode, setBusy, setApprovalPending, getSubscriber]);
 

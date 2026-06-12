@@ -6,10 +6,10 @@ export const FILE_MENTION_MAX_CHARS = 20000;
 export const FILE_MENTION_SKIP = new Set([".git", "node_modules", "dist", ".scira"]);
 export const PROVIDERS: SearchProvider[] = ["parallel", "exa", "firecrawl"];
 
-export const CHAT_COMMANDS = ["/help", "/home", "/new", "/plan", "/rerun", "/report", "/sources", "/claims", "/why", "/mcp", "/copy", "/usage", "/rename", "/model", "/llm", "/provider", "/theme", "/key", "/keys", "/stop", "/back", "/quit"];
+export const CHAT_COMMANDS = ["/help", "/home", "/new", "/plan", "/rerun", "/report", "/sources", "/claims", "/why", "/mcp", "/copy", "/usage", "/rename", "/model", "/llm", "/provider", "/theme", "/links", "/key", "/keys", "/stop", "/back", "/quit"];
 
 /** Slash commands that take an argument; ⏎ from the menu appends a space instead of running. */
-export const COMMANDS_NEEDING_ARGS = new Set(["/theme", "/key", "/rename", "/why"]);
+export const COMMANDS_NEEDING_ARGS = new Set(["/theme", "/key", "/rename", "/why", "/links"]);
 export const COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/help": "Show command and keyboard shortcuts.",
   "/home": "Go to the home screen (or show the welcome card on home).",
@@ -28,6 +28,7 @@ export const COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/llm": "Switch the LLM provider (gateway, xai, workers-ai).",
   "/provider": "Open the search provider selector.",
   "/theme": "Set UI theme: /theme dark · /theme light · /theme auto",
+  "/links": "Link opens: /links always · /links ask",
   "/key": "Save an API key, e.g. /key EXA_API_KEY ...",
   "/keys": "Show API key status and where to get missing keys.",
   "/stop": "Abort the currently running agent turn.",

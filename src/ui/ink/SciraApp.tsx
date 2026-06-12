@@ -1,15 +1,16 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { Box, useApp, useStdout, useStdin } from "ink";
 import { SciraConfig, RunState } from "../../types/index.js";
-import { type Screen, type ModelUsage, type TurnUsage, type ApprovalPending } from "./types.js";
+import { type Screen, type ModelUsage, type TurnUsage, type ApprovalPending, type LinkPending } from "./types.js";
 import { CHAT_COMMANDS, MENU_VISIBLE } from "./constants.js";
-import { CWD_DISPLAY, wrapText, wrapInputWithCursor, loadInputHistory, saveInputHistory } from "./lib/utils.js";
+import { CWD_DISPLAY, wrapText, wrapInputWithCursor, loadInputHistory, saveInputHistory, linkAtMouseColumn, openExternalUrl } from "./lib/utils.js";
 import { deleteRun } from "../../storage/run-store.js";
+import { saveGlobalConfig } from "../../config/load-config.js";
 import { useMountEffect, TipCycler, AnimationTick, MouseTracker } from "./components/effects.js";
 import { useFeedLines, computeGroups } from "./hooks/use-feed-lines.js";
 import { feedToolItemId, isToolItemCollapsed } from "./lib/tool-result.js";
 import { useAgentTurn } from "./hooks/use-agent-turn.js";
-import { TopBar, InputBar, HintLine, CommandMenuBox, HelpBox, ApprovalBox, MenuDialog, McpDialog, buildMcpDialogRows, type McpDialogRow } from "./components/overlays.js";
+import { TopBar, InputBar, HintLine, CommandMenuBox, HelpBox, ApprovalBox, LinkOpenBox, MenuDialog, McpDialog, buildMcpDialogRows, type McpDialogRow } from "./components/overlays.js";
 import { useMcpActions } from "./hooks/use-mcp-actions.js";
 import { useKeyboard } from "./hooks/use-keyboard.js";
 import { HomeScreen } from "./components/home-screen.js";
@@ -80,6 +81,28 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
   }, []);
 
   const [approvalPending, setApprovalPending] = useState<ApprovalPending | null>(null);
+  const [linkPending, setLinkPending] = useState<LinkPending | null>(null);
+
+  const confirmLinkOpen = useCallback(() => {
+    setLinkPending((pending) => {
+      if (pending) void openExternalUrl(pending.url);
+      return null;
+    });
+  }, []);
+
+  const enableAlwaysAllowLinks = useCallback(() => {
+    setLinkPending((pending) => {
+      if (pending) {
+        void (async () => {
+          const next = { ...config, alwaysAllowLinks: true };
+          setConfig(next);
+          await saveGlobalConfig(next);
+          void openExternalUrl(pending.url);
+        })();
+      }
+      return null;
+    });
+  }, [config, setConfig]);
 
   const [inputText, setInputText] = useState("");
   const [cursorPos, setCursorPos] = useState(0);
@@ -223,18 +246,25 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
     onModeChange: setMode,
   }), [pushFeed, appendText, appendReasoning, finishReasoning, markToolDone, setBusy, setApprovalPending, setMode]);
 
-  const runTurnRef = useRef<(prompt: string) => Promise<void>>(async () => { });
+  const runTurnRef = useRef<(prompt: string, runPathOverride?: string) => Promise<void>>(async () => { });
   const { refreshSessions, refreshRun, openRun: openRunBase } = useSession({
-    config, currentRunPath, conversationRef, feedRef, turnsRef, startedRef, runTurnRef,
+    config, currentRunPath, conversationRef, feedRef, turnsRef, startedRef,
     setSessions, setRunState, setCurrentRunPath, setInputText, setCursorPos,
     setFeed, setUsage, setScrollOffset, setScreen, setMode, setPlanMode,
     setBusy, setApprovalPending, getSubscriber,
   });
 
+  const { runTurn } = useAgentTurn({
+    config, currentRunPath, queuedPromptRef, fullModeRef, planModeRef, conversationRef, turnsRef, feedRef,
+    setBusy, setScrollOffset, refreshRun, recordUsage, setMode, setPlanMode, getSubscriber,
+  });
+  runTurnRef.current = runTurn;
+
   const openRun = useCallback(async (runPath: string, initialQuestion?: string) => {
     setPendingRerun(false);
-    await openRunBase(runPath, initialQuestion);
-  }, [openRunBase, setPendingRerun]);
+    const start = await openRunBase(runPath, initialQuestion);
+    if (start) await runTurn(start.startPrompt, runPath);
+  }, [openRunBase, runTurn, setPendingRerun]);
 
   useMountEffect(() => {
     if (!initialRunPath) void refreshSessions();
@@ -303,11 +333,9 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
     setMcpRowIdx((i) => Math.min(i, Math.max(0, mcpRowCount - 1)));
   }, [mcpRowCount]);
 
-  const { runTurn } = useAgentTurn({
-    config, currentRunPath, queuedPromptRef, fullModeRef, planModeRef, conversationRef, turnsRef, feedRef,
-    setBusy, setScrollOffset, refreshRun, recordUsage, setMode, setPlanMode, getSubscriber,
+  useMountEffect(() => {
+    if (initialRunPath) void openRun(initialRunPath);
   });
-  runTurnRef.current = runTurn;
 
   const { submitHome, submitChat, stopTurn } = useSubmit({
     state: { config, currentRunPath, sessions, selectedIdx, busy, usage, pendingRerun },
@@ -327,8 +355,9 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
   const innerWidth = Math.max(20, cols - 4);
   const boxWidth = Math.max(20, cols - 4);
   const textWidth = Math.max(1, boxWidth - 6);
-  const rawInputText = approvalPending ? "waiting for approval\u2026" : inputText;
-  const showCursor = !busy && !approvalPending;
+  const inputBlocked = !!approvalPending || !!linkPending;
+  const rawInputText = approvalPending ? "waiting for approval\u2026" : linkPending ? "open link? a/y/n" : inputText;
+  const showCursor = !busy && !inputBlocked;
   const caret = Math.max(0, Math.min(cursorPos, inputText.length));
   const { lines: inputLines, cursorLine, cursorCol } = wrapInputWithCursor(
     rawInputText,
@@ -341,12 +370,16 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
     ? Math.min(5, wrapText(approvalPending.description, Math.max(10, innerWidth - 4)).length)
     : 0;
   const approvalHeight = approvalPending ? approvalPreviewLines + 5 : 0;
-  const menuHeight = commandMenuHeight + helpHeight + approvalHeight;
+  const linkPreviewLines = linkPending
+    ? Math.min(4, wrapText(linkPending.url, Math.max(10, innerWidth - 4)).length)
+    : 0;
+  const linkHeight = linkPending ? linkPreviewLines + 5 : 0;
+  const menuHeight = commandMenuHeight + helpHeight + approvalHeight + linkHeight;
   const feedRows = Math.max(3, rows - 6 - inputLines.length - menuHeight);
 
 
   const hasRunningTool = feed.some((it) => it.kind === "tool" && it.status === "running");
-  const { lines: feedLines, toggleAtLine, groupToggleAtLine } = useFeedLines(
+  const { lines: feedLines, toggleAtLine, groupToggleAtLine, linkAtLine } = useFeedLines(
     feed, innerWidth, reasoningTick, hasRunningTool ? frame : 0,
     collapsedGroups, focusedGroupKey, itemExpandState, hoveredIdx, config,
   );
@@ -357,19 +390,31 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
   const clampedOffset = Math.min(scrollOffset, maxScrollOffset);
   const startIdx = Math.max(0, feedLines.length - contentRows - clampedOffset);
 
+  const hasLinkHover = hoveredIdx !== null && (linkAtLine.get(hoveredIdx)?.length ?? 0) > 0;
+
   const feedStartRow = 3;
   if (screen === "chat") {
     const clickMap = new Map<number, (x: number) => void>();
     const hoverMap = new Map<number, number>();
-    const registerLine = (lineIdx: number, onClick: () => void) => {
+    const registerLine = (lineIdx: number, onClick: (x: number) => void) => {
       const vis = lineIdx - startIdx;
       if (vis < 0 || vis >= contentRows) return;
       const row = feedStartRow + vis;
-      clickMap.set(row, onClick);
+      const prev = clickMap.get(row);
+      clickMap.set(row, prev ? (x) => { prev(x); onClick(x); } : onClick);
       hoverMap.set(row, lineIdx);
     };
     toggleAtLine.forEach((id, lineIdx) => registerLine(lineIdx, () => toggleToolItem(id)));
     groupToggleAtLine.forEach((groupKey, lineIdx) => registerLine(lineIdx, () => toggleGroup(groupKey)));
+    linkAtLine.forEach((links, lineIdx) => {
+      registerLine(lineIdx, (x) => {
+        if (approvalPending) return;
+        const url = linkAtMouseColumn(links, x);
+        if (!url) return;
+        if (config.alwaysAllowLinks) void openExternalUrl(url);
+        else setLinkPending({ url });
+      });
+    });
     clickMapRef.current = clickMap;
     hoverMapRef.current = hoverMap;
   }
@@ -385,7 +430,9 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
     exit,
     input: { text: inputText, setText: setInputText, cursorPos, setCursorPos, history: inputHistory, historyIndex, setHistoryIndex },
     dialogs: {
-      approvalPending, setApprovalPending, menu, setMenu, applyMenuSelection, helpOpen, setHelpOpen,
+      approvalPending, setApprovalPending, linkPending, setLinkPending,
+      onConfirmLink: confirmLinkOpen, onAlwaysAllowLinks: enableAlwaysAllowLinks,
+      menu, setMenu, applyMenuSelection, helpOpen, setHelpOpen,
       mcpOpen, setMcpOpen, mcpRowIdx, setMcpRowIdx, mcpRowCount, toggleMcpRow, removeMcpRow,
     },
     suggestions: { activeSuggestions, activeSuggestionKind, commandMenuIndex, setCommandMenuIndex, acceptActiveSuggestion },
@@ -436,7 +483,7 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
         />
         <Box flexDirection="column" paddingBottom={1}>
           <CommandMenuBox activeSuggestions={activeSuggestions} activeSuggestionKind={activeSuggestionKind} commandMenuIndex={commandMenuIndex} innerWidth={innerWidth} sessions={sessions} config={config} />
-          <InputBar inputLines={inputLines} cursorLine={cursorLine} cursorCol={cursorCol} showCursor={showCursor} approvalPending={!!approvalPending} busy={busy} frame={frame} boxWidth={boxWidth} modelName={modelName} config={config} />
+          <InputBar inputLines={inputLines} cursorLine={cursorLine} cursorCol={cursorCol} showCursor={showCursor} approvalPending={inputBlocked} busy={busy} frame={frame} boxWidth={boxWidth} modelName={modelName} config={config} />
           <HintLine screen={screen} busy={busy} config={config} />
         </Box>
         <MenuDialog menu={menu} cols={cols} rows={rows} config={config} />
@@ -463,15 +510,16 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
       )}
       {busy && <AnimationTick setBlink={setBlink} setFrame={setFrame} setReasoningTick={setReasoningTick} />}
       <TopBar screen={screen} runState={runState} fullMode={fullMode} planMode={planMode} activeUsage={activeUsage} busy={busy} frame={frame} cwdDisplay={CWD_DISPLAY} config={config} />
-      <Box flexDirection="column" flexGrow={1} paddingTop={1} overflow="hidden">
+      <Box flexDirection="column" height={contentRows} flexShrink={0} justifyContent="flex-end" paddingTop={1} overflow="hidden">
         {visibleLines}
       </Box>
       <ChatInputChrome>
         <CommandMenuBox activeSuggestions={activeSuggestions} activeSuggestionKind={activeSuggestionKind} commandMenuIndex={commandMenuIndex} innerWidth={innerWidth} sessions={sessions} config={config} />
         <HelpBox open={helpOpen} innerWidth={innerWidth} config={config} />
         {approvalPending && <ApprovalBox toolName={approvalPending.toolName} description={approvalPending.description} innerWidth={innerWidth} config={config} />}
-        <InputBar inputLines={inputLines} cursorLine={cursorLine} cursorCol={cursorCol} showCursor={showCursor} approvalPending={!!approvalPending} busy={busy} frame={frame} boxWidth={boxWidth} modelName={modelName} config={config} />
-        <HintLine screen={screen} busy={busy} scrollLabel={scrollLabel} hasDoneGroups={doneGroupKeys.length > 0} hasFocusedGroup={focusedGroupKey !== null} config={config} />
+        {linkPending && <LinkOpenBox url={linkPending.url} innerWidth={innerWidth} config={config} />}
+        <InputBar inputLines={inputLines} cursorLine={cursorLine} cursorCol={cursorCol} showCursor={showCursor} approvalPending={inputBlocked} busy={busy} frame={frame} boxWidth={boxWidth} modelName={modelName} config={config} />
+        <HintLine screen={screen} busy={busy} scrollLabel={scrollLabel} hasDoneGroups={doneGroupKeys.length > 0} hasFocusedGroup={focusedGroupKey !== null} hasLinkHover={hasLinkHover || !!linkPending} alwaysAllowLinks={config.alwaysAllowLinks} config={config} />
       </ChatInputChrome>
       <MenuDialog menu={menu} cols={cols} rows={rows} config={config} />
       <McpDialog

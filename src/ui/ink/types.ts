@@ -11,3 +11,4 @@ export type ModelUsage = { input: number; output: number; total: number; turns: 
 export type TurnUsage = { model: string; input: number; output: number; total: number; ts: number };
 export type SessionUsage = { total: { input: number; output: number; total: number }; byModel: Record<string, ModelUsage>; turns: TurnUsage[] };
 export type ApprovalPending = { toolName: string; description: string; resolve: (v: boolean) => void };
+export type LinkPending = { url: string };

@@ -53,7 +53,7 @@ export type SubmitActionOptions = {
   openRun: (runPath: string, initialQuestion?: string) => Promise<void>;
   openMenu: (type: "model" | "provider" | "llm") => Promise<void>;
   handleSettings: (text: string) => Promise<string | null>;
-  runTurn: (prompt: string) => Promise<void>;
+  runTurn: (prompt: string, runPathOverride?: string) => Promise<void>;
   exit: () => void;
 };
 
@@ -122,7 +122,7 @@ export function useSubmit(o: SubmitOptions): {
       const run = await createRun(text, config);
       await refreshSessions();
       setBusy(false);
-      void openRun(run.path, text);
+      await openRun(run.path, text);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
       setBusy(false);

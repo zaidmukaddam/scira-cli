@@ -9,11 +9,25 @@ Every release of Scira. Versions follow semantic versioning and publish to npm a
 
 <Step>
 
-### 0.1.3 — Unreleased
+### 0.1.4 — Unreleased
 
 <Callout title="Unreleased">
-  In development — the version is bumped but not yet published. The latest version on npm is 0.1.2.
+  In development — the version is bumped but not yet published. The latest version on npm is 0.1.3.
 </Callout>
+
+**TUI fixes**
+
+- **Clickable links** — markdown links in the timeline now render as native [OSC 8 terminal hyperlinks](https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda) via `ink-link`, so supporting terminals (iTerm2, WezTerm, kitty, VS Code, GNOME Terminal) make them Cmd/Ctrl-clickable. Terminals without hyperlink support fall back to the same styled text as before, with no change to layout.
+- **Slash menu no longer leaves a gap** — the message feed is now sized to its content and anchored to the bottom, so opening the command menu (and the help, approval, and link overlays) no longer leaves blank padding between the conversation and the input box.
+- **Overlays align with messages** — the command, help, approval, and link boxes dropped their stray horizontal margin, so they now share the same left edge and width as the input box and the message column.
+
+</Step>
+
+<Step>
+
+### 0.1.3 — June 13, 2026
+
+_Latest published._
 
 **X search**
 
@@ -44,8 +58,6 @@ Every release of Scira. Versions follow semantic versioning and publish to npm a
 <Step>
 
 ### 0.1.2 — June 11, 2026
-
-_Latest published._
 
 - Improved CLI commands across `init`, `doctor`, and run handling.
 - Enhanced TUI theme support: dark, light, and auto, following your terminal, with `/theme` to override.

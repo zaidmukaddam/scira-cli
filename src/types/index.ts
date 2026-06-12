@@ -11,6 +11,7 @@ export const SciraConfigSchema = z.object({
   // last selected model per LLM provider, restored when switching back
   lastModels: z.record(z.string(), z.string()).default({}),
   approvalMode: ApprovalModeSchema.default("suggest"),
+  alwaysAllowLinks: z.boolean().default(false),
   runDirectory: z.string().default(".scira/runs"),
   maxSources: z.number().int().min(1).max(100).default(20),
   citationPolicy: z.enum(["strict", "balanced"]).default("strict"),

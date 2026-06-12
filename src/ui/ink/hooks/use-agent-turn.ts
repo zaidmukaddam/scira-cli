@@ -41,13 +41,13 @@ export function useAgentTurn({
   config, currentRunPath, queuedPromptRef, fullModeRef, planModeRef, conversationRef, turnsRef, feedRef,
   setBusy, setScrollOffset, refreshRun, recordUsage, setMode, setPlanMode, getSubscriber,
 }: AgentTurnOptions): {
-  runTurn: (prompt: string) => Promise<void>;
-  runTurnRef: React.RefObject<(prompt: string) => Promise<void>>;
+  runTurn: (prompt: string, runPathOverride?: string) => Promise<void>;
+  runTurnRef: React.RefObject<(prompt: string, runPathOverride?: string) => Promise<void>>;
 } {
   const bgManagersRef = useRef(new Map<string, BackgroundTaskManager>());
 
-  const runTurn = useCallback(async (prompt: string) => {
-    const runPath = currentRunPath;
+  const runTurn = useCallback(async (prompt: string, runPathOverride?: string) => {
+    const runPath = runPathOverride ?? currentRunPath;
     if (!runPath) return;
     const workspacePath = resolveProjectRoot(runPath);
     const existing = getSession(runPath);

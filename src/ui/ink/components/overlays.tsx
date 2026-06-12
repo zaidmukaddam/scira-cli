@@ -112,7 +112,7 @@ export function InputBar({ inputLines, cursorLine, cursorCol, showCursor, approv
   );
 }
 
-export function HintLine({ screen, busy, scrollLabel, hasDoneGroups, hasFocusedGroup, config }: { screen: Screen; busy: boolean; scrollLabel?: string; hasDoneGroups?: boolean; hasFocusedGroup?: boolean; config: SciraConfig }): React.ReactElement {
+export function HintLine({ screen, busy, scrollLabel, hasDoneGroups, hasFocusedGroup, hasLinkHover, alwaysAllowLinks, config }: { screen: Screen; busy: boolean; scrollLabel?: string; hasDoneGroups?: boolean; hasFocusedGroup?: boolean; hasLinkHover?: boolean; alwaysAllowLinks?: boolean; config: SciraConfig }): React.ReactElement {
   const theme = useTheme();
   if (screen === "chat") {
     return (
@@ -122,6 +122,16 @@ export function HintLine({ screen, busy, scrollLabel, hasDoneGroups, hasFocusedG
         <Text color={theme.textDim}><Text bold color={theme.accent}>/REPORT</Text></Text>
         <Text color={theme.textDim}>{"|"}</Text>
         <Text color={theme.textDim}><Text bold color={theme.accent}>/NEW</Text></Text>
+        {hasLinkHover && !busy ? (
+          <>
+            <Text color={theme.textDim}>{"|"}</Text>
+            <Text color={theme.textDim}>
+              {alwaysAllowLinks
+                ? "click link to open"
+                : <>click link · <Text bold color={theme.accent}>a</Text> always · <Text bold color={theme.accent}>y</Text> open · <Text bold color={theme.accent}>n</Text> cancel</>}
+            </Text>
+          </>
+        ) : null}
         {busy && (
           <>
             <Text color={theme.textDim}>{"|"}</Text>
@@ -194,7 +204,7 @@ export function CommandMenuBox({ activeSuggestions, activeSuggestionKind, comman
     return bits.join(" · ");
   };
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={theme.border} paddingX={1} marginX={1}>
+    <Box flexDirection="column" borderStyle="round" borderColor={theme.border} paddingX={1}>
       <Text color={theme.textDim}>{header}{windowStart > 0 ? "  ↑" : ""}{windowStart + MENU_VISIBLE < total ? "  ↓" : ""}</Text>
       {visible.map((item, i) => {
         const gi = windowStart + i;
@@ -221,7 +231,7 @@ export function HelpBox({ open, innerWidth, config }: { open: boolean; innerWidt
   const theme = useTheme();
   if (!open) return null;
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={theme.border} paddingX={1} marginX={1}>
+    <Box flexDirection="column" borderStyle="round" borderColor={theme.border} paddingX={1}>
       <Text bold color={theme.text}>help <Text color={theme.textDim}>esc close</Text></Text>
       <Text color={theme.textDim}>{"─".repeat(Math.max(10, innerWidth - 6))}</Text>
       <Text color={theme.textDim}>scroll  ↑/↓  k/j  u/d  pgup/pgdn</Text>
@@ -243,10 +253,23 @@ type ApprovalBoxProps = {
   innerWidth: number;
 };
 
+export function LinkOpenBox({ url, innerWidth, config }: { url: string; innerWidth: number; config: SciraConfig }): React.ReactElement {
+  const theme = useTheme();
+  return (
+    <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+      <Text bold color={theme.accent}>↗ Open in browser?<Text color={theme.textDim}>  a always · y open · n cancel</Text></Text>
+      <Text color={theme.textDim}>{"─".repeat(Math.max(10, innerWidth - 6))}</Text>
+      {wrapText(url, Math.max(10, innerWidth - 4)).slice(0, 4).map((line, i) => (
+        <Text key={i} color={theme.text} wrap="truncate">{line}</Text>
+      ))}
+    </Box>
+  );
+}
+
 export function ApprovalBox({ toolName, description, innerWidth, config }: { toolName: string; description: string; innerWidth: number; config: SciraConfig }): React.ReactElement {
   const theme = useTheme();
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={theme.warning} paddingX={1} marginX={1}>
+    <Box flexDirection="column" borderStyle="round" borderColor={theme.warning} paddingX={1}>
       <Text bold color={theme.warning}>⚠  {toolName}<Text color={theme.textDim}>  y approve · n reject</Text></Text>
       <Text color={theme.textDim}>{"─".repeat(Math.max(10, innerWidth - 6))}</Text>
       {wrapText(description, Math.max(10, innerWidth - 4)).slice(0, 6).map((line, i) => {

@@ -170,6 +170,26 @@ export function useSettings({ config, setConfig, screen, pushFeed, setNotice }: 
       await saveGlobalConfig(next);
       return `Theme set to ${arg}.`;
     }
+    if (cmd === "/links") {
+      if (!arg) {
+        return config.alwaysAllowLinks
+          ? "Links open without confirmation. Use /links ask to require confirmation again."
+          : "Links ask before opening. Use /links always to skip confirmation.";
+      }
+      if (arg === "always") {
+        const next = { ...config, alwaysAllowLinks: true };
+        setConfig(next);
+        await saveGlobalConfig(next);
+        return "Links will open on click without confirmation.";
+      }
+      if (arg === "ask") {
+        const next = { ...config, alwaysAllowLinks: false };
+        setConfig(next);
+        await saveGlobalConfig(next);
+        return "Links will ask for confirmation before opening.";
+      }
+      return `Unknown /links option "${arg}". Options: always, ask`;
+    }
     if (cmd === "/keys") {
       return formatKeysStatus(detectEnv(config.search.provider, config.llmProvider));
     }
