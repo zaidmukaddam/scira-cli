@@ -1,5 +1,7 @@
 import { RootProvider } from 'fumadocs-ui/provider/next';
 import { ThemeProvider } from 'next-themes';
+import { Analytics } from '@vercel/analytics/next';
+import { SpeedInsights } from '@vercel/speed-insights/next';
 import './global.css';
 import { GeistMono } from 'geist/font/mono';
 import { GeistSans } from 'geist/font/sans';
@@ -40,6 +42,8 @@ export default function Layout({ children }: LayoutProps<'/'>) {
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <RootProvider>{children}</RootProvider>
         </ThemeProvider>
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
