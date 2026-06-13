@@ -1,5 +1,5 @@
 import React from "react";
-import { HOME_TIPS, SPINNER_FRAMES } from "../constants.js";
+import { HOME_TIPS } from "../constants.js";
 
 /** Stable mount-only effect: makes intent explicit, prevents accidental dep-driven re-runs. */
 export function useMountEffect(effect: React.EffectCallback): void {
@@ -28,7 +28,10 @@ export function AnimationTick({
 }): null {
   useMountEffect(() => {
     const blinkId = setInterval(() => setBlink((v) => !v), 400);
-    const frameId = setInterval(() => setFrame((f) => (f + 1) % SPINNER_FRAMES.length), 80);
+    // frame increments monotonically; consumers take `% SPINNER_FRAMES.length` for the
+    // spinner glyph and `Math.floor(frame / 24)` for the slow phrase rotation. Wrapping it
+    // here would pin the phrase to index 0 forever (frame would never exceed the frame count).
+    const frameId = setInterval(() => setFrame((f) => f + 1), 80);
     const tickId = setInterval(() => setReasoningTick((t) => t + 1), 500);
     return () => {
       clearInterval(blinkId);

@@ -9,6 +9,16 @@ Every release of Scira. Versions follow semantic versioning and publish to npm a
 
 <Step>
 
+### 0.1.8 — June 13, 2026
+
+**TUI fixes**
+
+- **Loading phrase now rotates** — the animated loading line under a running turn was permanently stuck on "Thinking it through…": the frame counter wrapped modulo the spinner length, so it never grew enough to advance the phrase. The counter now increments monotonically (the spinner still takes it modulo its frame count), so the phrase cycles roughly every two seconds as intended.
+
+</Step>
+
+<Step>
+
 ### 0.1.7 — June 13, 2026
 
 **Updates & harness polish**
