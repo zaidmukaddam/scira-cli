@@ -1,3 +1,4 @@
+import { diffLines } from "diff";
 import type { ThemeColors } from "../theme.js";
 import type { MdSeg } from "./markdown.js";
 import { markdownToSegLines } from "./markdown.js";
@@ -8,9 +9,49 @@ type SearchGroup = { query?: string; results?: SearchHit[]; error?: string };
 type XPost = { url: string; id?: string; handle?: string; text?: string };
 type XPostGroup = { query?: string; dateRange?: string; posts?: XPost[]; error?: string };
 
+const HARNESS_TOOL_PREFIX = "mcp__harness-tools__";
+
+/** Map Claude Code / Codex built-in (and harness host) tool names onto Scira's renderers. */
+const CANONICAL_TOOL: Record<string, string> = {
+  // Scira host tools exposed to the CLI
+  multiWebSearch: "webSearch",
+  // Claude Code built-ins
+  Read: "readFile",
+  Write: "writeFile",
+  Edit: "editFile",
+  MultiEdit: "editFile",
+  NotebookEdit: "editFile",
+  Bash: "bash",
+  BashOutput: "bash",
+  Grep: "grepWorkspace",
+  Glob: "listWorkspaceDir",
+  LS: "listWorkspaceDir",
+  TodoWrite: "todo",
+  WebFetch: "readUrl",
+  WebSearch: "webSearch",
+  // Codex built-ins
+  shell: "bash",
+};
+
+/** Strip the harness host-tool MCP prefix so `mcp__harness-tools__readUrl` reads as `readUrl`. */
+export function displayToolName(name: string): string {
+  return name.startsWith(HARNESS_TOOL_PREFIX) ? name.slice(HARNESS_TOOL_PREFIX.length) : name;
+}
+
+/**
+ * Resolve a harness/CLI tool name to the Scira renderer key. The harness exposes
+ * our host tools as `mcp__harness-tools__*` and the CLIs have their own builtin
+ * names (Read, Bash, Grep, …); both should render like Scira's equivalents.
+ */
+export function canonicalToolName(name: string): string {
+  const stripped = displayToolName(name);
+  return CANONICAL_TOOL[stripped] ?? stripped;
+}
+
 /** Tools that start collapsed in the timeline (long output). */
 export const DEFAULT_COLLAPSED_TOOLS = new Set([
   "webSearch",
+  "multiWebSearch",
   "readUrl",
   "readFile",
   "readWorkspaceFile",
@@ -317,11 +358,12 @@ function formatBody(
 
 /** One-line preview for a collapsed tool header. */
 export function formatToolResultPreview(
-  name: string,
+  rawName: string,
   inputSummary: string,
   result: string | undefined,
   status: "running" | "done" | "error",
 ): string {
+  const name = canonicalToolName(rawName);
   const input = inputSummary.replace(/\s+/gu, " ").trim();
   if (status === "running") return input ? `${input} · running…` : "running…";
   if (status === "error") return input || "failed";
@@ -375,17 +417,174 @@ export function formatToolResultPreview(
   return first.length > 140 ? `${first.slice(0, 137)}…` : first;
 }
 
+// --- Dedicated renderers for Claude Code / Codex built-in tools ---
+
+function parseObj(s?: string): Record<string, unknown> | null {
+  if (!s) return null;
+  try {
+    const v: unknown = JSON.parse(s);
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Unified-ish diff between two strings: removed lines red, added green, a little context dim. */
+function diffSegLines(oldStr: string, newStr: string, width: number, theme: ThemeColors): MdSeg[][] {
+  const parts = diffLines(oldStr ?? "", newStr ?? "");
+  const out: MdSeg[][] = [];
+  const MAX = 60;
+  let count = 0;
+  for (const part of parts) {
+    const sign = part.added ? "+" : part.removed ? "-" : " ";
+    const color = part.added ? theme.success : part.removed ? theme.error : theme.textDim;
+    const linesIn = part.value.replace(/\n$/u, "").split("\n");
+    for (const ln of linesIn) {
+      if (count >= MAX) {
+        out.push([seg("… diff truncated", { dim: true, color: theme.textDim })]);
+        return out;
+      }
+      for (const wrapped of wrapText(`${sign} ${ln}`, width)) {
+        out.push([seg(wrapped, { color, dim: !part.added && !part.removed })]);
+      }
+      count++;
+    }
+  }
+  return out;
+}
+
+function pathHeader(p: unknown, theme: ThemeColors): MdSeg[] {
+  return [seg("path  ", { dim: true, color: theme.textDim }), seg(String(p ?? ""), { color: theme.text })];
+}
+
+/** Edit / MultiEdit → file path + colored diff(s). */
+function formatEditBody(input: Record<string, unknown>, width: number, theme: ThemeColors): MdSeg[][] {
+  const lines: MdSeg[][] = [pathHeader(input.file_path ?? input.notebook_path, theme)];
+  const edits = Array.isArray(input.edits)
+    ? (input.edits as Record<string, unknown>[])
+    : [{ old_string: input.old_string, new_string: input.new_string }];
+  edits.forEach((e, i) => {
+    if (edits.length > 1) lines.push([seg(`edit ${i + 1}`, { dim: true, color: theme.textDim })]);
+    lines.push(...diffSegLines(String(e.old_string ?? ""), String(e.new_string ?? input.new_source ?? ""), width, theme));
+  });
+  return lines;
+}
+
+/** TodoWrite → checklist with status glyphs. */
+function formatTodoBody(input: Record<string, unknown>, width: number, theme: ThemeColors): MdSeg[][] {
+  const todos = Array.isArray(input.todos) ? (input.todos as Record<string, unknown>[]) : [];
+  if (todos.length === 0) return [[seg("(no todos)", { dim: true, color: theme.textDim })]];
+  return todos.flatMap((t) => {
+    const status = String(t.status ?? "pending");
+    const glyph = status === "completed" ? "☑" : status === "in_progress" ? "◐" : "☐";
+    const color = status === "completed" ? theme.success : status === "in_progress" ? theme.warning : theme.textDim;
+    const text = String(t.content ?? t.activeForm ?? "");
+    const wrapped = wrapText(text, Math.max(8, width - 2));
+    return wrapped.map((w, i) => [seg(i === 0 ? `${glyph} ` : "  ", { color }), seg(w, { color: status === "completed" ? theme.textDim : theme.text })]);
+  });
+}
+
+/** Write → file path + content preview. */
+function formatWriteBody(input: Record<string, unknown>, width: number, theme: ThemeColors): MdSeg[][] {
+  const lines: MdSeg[][] = [pathHeader(input.file_path, theme), blank()];
+  const allLines = String(input.content ?? "").split("\n");
+  const shown = allLines.slice(0, 40);
+  for (const ln of shown) lines.push(...plainLines(ln, width, { color: theme.text }));
+  if (allLines.length > shown.length) lines.push([seg(`… +${allLines.length - shown.length} more lines`, { dim: true, color: theme.textDim })]);
+  return lines;
+}
+
+/** WebFetch → url + fetched/answer text. */
+function formatWebFetchBody(input: Record<string, unknown> | null, result: string, width: number, theme: ThemeColors): MdSeg[][] {
+  const lines: MdSeg[][] = [];
+  const url = input?.url;
+  if (url) lines.push([seg("url  ", { dim: true, color: theme.textDim }), seg(String(url), { color: theme.accent, underline: true, url: String(url) })]);
+  if (result.trim()) {
+    if (lines.length > 0) lines.push(blank());
+    lines.push(...plainLines(result, width, { color: theme.text }));
+  }
+  return lines;
+}
+
+/** Task / Agent (subagent) → description + output. */
+function formatSubagentBody(input: Record<string, unknown> | null, result: string, width: number, theme: ThemeColors): MdSeg[][] {
+  const lines: MdSeg[][] = [];
+  const desc = input?.description ?? input?.subagent_type;
+  if (desc) lines.push([seg("task  ", { dim: true, color: theme.textDim }), seg(String(desc), { color: theme.text })]);
+  if (result.trim()) {
+    if (lines.length > 0) lines.push(blank());
+    lines.push(...markdownToSegLines(result, width, theme));
+  }
+  return lines;
+}
+
+/** ToolSearch → query + which tool reference it loaded. */
+function formatToolSearchBody(input: Record<string, unknown> | null, result: string, width: number, theme: ThemeColors): MdSeg[][] {
+  const lines: MdSeg[][] = [];
+  if (input?.query) lines.push([seg("query  ", { dim: true, color: theme.textDim }), seg(String(input.query), { color: theme.text })]);
+  const ref = parseObj(result);
+  if (ref?.tool_name) lines.push([seg("loaded  ", { dim: true, color: theme.textDim }), seg(String(ref.tool_name), { color: theme.accent })]);
+  else if (result.trim()) lines.push(...plainLines(result, width, { color: theme.textDim }));
+  return lines;
+}
+
+/**
+ * Dedicated body for a Claude Code / Codex built-in tool, keyed by its real
+ * (un-prefixed) name. Returns null to fall through to the generic renderer.
+ */
+function formatBuiltinBody(real: string, rawInput: string | undefined, result: string, width: number, theme: ThemeColors): MdSeg[][] | null {
+  const input = parseObj(rawInput);
+  switch (real) {
+    case "Edit": case "edit": case "MultiEdit": case "NotebookEdit":
+      return input ? formatEditBody(input, width, theme) : null;
+    case "TodoWrite":
+      return input ? formatTodoBody(input, width, theme) : null;
+    case "Write": case "write":
+      return input ? formatWriteBody(input, width, theme) : null;
+    case "WebFetch":
+      return formatWebFetchBody(input, result, width, theme);
+    case "Task": case "Agent":
+      return formatSubagentBody(input, result, width, theme);
+    case "ToolSearch":
+      return formatToolSearchBody(input, result, width, theme);
+    default:
+      return null;
+  }
+}
+
 /** Multi-line formatted tool output for the feed panel. */
 export function formatToolResultLines(
-  name: string,
+  rawName: string,
   inputSummary: string,
-  result: string | undefined,
+  rawResult: string | undefined,
   status: "running" | "done" | "error",
   contentWidth: number,
   theme: ThemeColors,
   expanded = true,
+  rawInput?: string,
 ): MdSeg[][] {
+  const name = canonicalToolName(rawName);
+  const real = displayToolName(rawName);
   if (!expanded) return [];
+
+  // Bound the text we lay out per render — a terminal can't show a 1MB result,
+  // and wrapping/parsing that much on every frame is what stalls the renderer.
+  // The full result stays in the stored feed; only what we format is capped.
+  const MAX_RENDER = 60_000;
+  const result = rawResult && rawResult.length > MAX_RENDER
+    ? `${rawResult.slice(0, MAX_RENDER)}\n\n… [${rawResult.length - MAX_RENDER} more chars not shown]`
+    : rawResult;
+
+  // Dedicated built-in tool rendering (diffs, checklists, …). Input-driven ones
+  // (Edit, Write, TodoWrite) render even while the tool is still running.
+  if (status !== "error") {
+    const builtin = formatBuiltinBody(real, rawInput, result ?? "", Math.max(16, contentWidth), theme);
+    if (builtin && builtin.length > 0) {
+      if (status === "running" && !result?.trim()) builtin.push([seg("running…", { dim: true, color: theme.textDim })]);
+      return builtin;
+    }
+  }
+
   const width = Math.max(16, contentWidth);
   const lines: MdSeg[][] = [];
   const input = inputSummary.replace(/\s+/gu, " ").trim();

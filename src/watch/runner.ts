@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { diffLines } from "diff";
 import { createRun, listRuns, getRunPaths } from "../storage/run-store.js";
-import { runResearchAgent } from "../agent/research-agent.js";
+import { runResearchAgent } from "../agent/main-agent.js";
 import { type SciraConfig } from "../types/index.js";
 
 export type WatchOptions = {
@@ -63,7 +63,7 @@ export async function watchLoop(opts: WatchOptions, signal?: AbortSignal): Promi
 
     try {
       await runResearchAgent(runPath, goal, config);
-      const nextReport = await readFile(getRunPaths(runPath).report, "utf8").catch(() => "");
+      const nextReport = await Bun.file(getRunPaths(runPath).report).text().catch(() => "");
       const diffText = diffReports(prevReport, nextReport);
       opts.onRunComplete?.(runPath, diffText, tick);
     } catch (err) {

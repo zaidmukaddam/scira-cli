@@ -153,6 +153,22 @@ export function useSettings({ config, setConfig, screen, pushFeed, setNotice }: 
       await setEnvKey(name, value);
       return `${name} saved to ~/.scira/.env and active for this session. Use .scira/.env in a project to scope keys to that repo.`;
     }
+    if (cmd === "/thinking") {
+      if (!arg) return `Claude Code thinking: ${config.harness.thinking}\nOptions: off, on, adaptive`;
+      if (!["off", "on", "adaptive"].includes(arg)) return `Unknown thinking mode "${arg}". Options: off, on, adaptive`;
+      const next = { ...config, harness: { ...config.harness, thinking: arg as "off" | "on" | "adaptive" } };
+      setConfig(next);
+      await saveGlobalConfig(next);
+      return `Claude Code thinking set to ${arg}.`;
+    }
+    if (cmd === "/reasoning") {
+      if (!arg) return `Codex reasoning effort: ${config.harness.reasoningEffort}\nOptions: low, medium, high`;
+      if (!["low", "medium", "high"].includes(arg)) return `Unknown reasoning effort "${arg}". Options: low, medium, high`;
+      const next = { ...config, harness: { ...config.harness, reasoningEffort: arg as "low" | "medium" | "high" } };
+      setConfig(next);
+      await saveGlobalConfig(next);
+      return `Codex reasoning effort set to ${arg}.`;
+    }
     if (cmd === "/theme") {
       if (!arg) {
         const terminal = detectTerminalTheme();

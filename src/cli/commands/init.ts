@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -38,8 +38,8 @@ export async function initCommand() {
   await mkdir(SCIRA_DIR, { recursive: true });
 
   // Read existing .env and config
-  const existingEnv = existsSync(ENV_FILE) ? parseEnvFile(await readFile(ENV_FILE, "utf8")) : {};
-  const existingConfig = existsSync(CONFIG_FILE) ? JSON.parse(await readFile(CONFIG_FILE, "utf8")) as Partial<SciraConfig> : null;
+  const existingEnv = existsSync(ENV_FILE) ? parseEnvFile(await Bun.file(ENV_FILE).text()) : {};
+  const existingConfig = existsSync(CONFIG_FILE) ? (await Bun.file(CONFIG_FILE).json()) as Partial<SciraConfig> : null;
 
   // Ask if user wants to reconfigure
   const shouldReconfigure = existingConfig ? await p.confirm({
@@ -268,7 +268,7 @@ export async function initCommand() {
     .map(([key, value]) => `${key}=${value}`)
     .join("\n");
 
-  await writeFile(ENV_FILE, envContent, "utf8");
+  await Bun.write(ENV_FILE, envContent);
   p.log.success("API keys saved to ~/.scira/.env");
 
   // Step 3: Model Selection
@@ -285,6 +285,7 @@ export async function initCommand() {
       model: defaultModelFor(llmProvider as LlmProvider),
       lastModels: {},
       approvalMode: "suggest",
+      harness: { thinking: "adaptive", reasoningEffort: "medium" },
       alwaysAllowLinks: false,
       runDirectory: ".scira/runs",
       maxSources: 20,
@@ -379,6 +380,7 @@ export async function initCommand() {
     model,
     lastModels: { [llmProvider as LlmProvider]: model, ...(existingConfig?.lastModels || {}) },
     approvalMode: approvalMode as "manual" | "suggest" | "auto",
+    harness: existingConfig?.harness ?? { thinking: "adaptive", reasoningEffort: "medium" },
     alwaysAllowLinks: existingConfig?.alwaysAllowLinks ?? false,
     search: {
       provider: searchProvider as SearchProvider,
@@ -400,7 +402,7 @@ export async function initCommand() {
     },
   };
 
-  await writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), "utf8");
+  await Bun.write(CONFIG_FILE, JSON.stringify(config, null, 2));
   p.log.success("Configuration saved to ~/.scira/config.json");
 
   // Step 5: Verify

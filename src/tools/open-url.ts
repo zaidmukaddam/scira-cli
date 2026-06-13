@@ -1,5 +1,4 @@
 import process from "node:process";
-import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
@@ -104,6 +103,6 @@ export async function openUrl(url: string, config: SciraConfig): Promise<Extract
 
 export async function writeSnapshot(snapshotsDir: string, sourceId: string, page: ExtractedPage): Promise<string> {
   const path = join(snapshotsDir, `${sourceId}.md`);
-  await writeFile(path, `# ${page.title}\n\n${page.text}\n`);
+  await Bun.write(path, `# ${page.title}\n\n${page.text}\n`);
   return path;
 }

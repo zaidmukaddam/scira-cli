@@ -9,6 +9,37 @@ Every release of Scira. Versions follow semantic versioning and publish to npm a
 
 <Step>
 
+### 0.1.6 — June 13, 2026
+
+**Local agent runtimes — Claude Code & Codex**
+
+- **Run Claude Code or Codex as a provider** — pick `claude-code` or `codex` from `/llm` (or the provider picker) and Scira drives the [AI SDK harness](https://ai-sdk.dev/v7/docs/ai-sdk-harnesses/overview) instead of a plain language model. The CLI's own agent loop and tools run inside the TUI, streamed into the timeline like any other turn.
+- **Runs on your machine, on your real files** — a local-filesystem sandbox runs the harness bridge as you, in your project directory, with full local filesystem and process access. No cloud sandbox.
+- **Uses your existing CLI login — no API key** — authentication comes from your `claude login` / `codex login` session (`~/.claude` / `~/.codex`). Scira never reads, passes, or inherits an API key for these providers — credential env vars are stripped from the bridge so your Pro/Max/ChatGPT subscription session is used as-is.
+- **Model & reasoning controls** — `/model` lists Claude (Sonnet 4.6 default) and Codex (GPT-5.5 default) models; `/thinking` sets Claude Code extended thinking (off/on/adaptive) and `/reasoning` sets Codex effort (low/medium/high).
+- **Grounded web search** — the harness's built-in web search is disabled; instead the CLI is given Scira's own multi-query `webSearch` and `readUrl` tools, so web answers run through your configured Exa/Firecrawl/Parallel pipeline and cite real sources.
+- **Same instructions as Scira** — the harness receives Scira's agent instructions, so it follows the same workflow and persona as the built-in agent.
+- **Session continuity & resume** — each run keeps one live harness session across turns, and the resume state is persisted per run so reopening a run (even after restarting the TUI) continues the same CLI conversation. Sessions are cleanly torn down on quit, and any resume failure falls back to a fresh session.
+- **`scira doctor`** — now reports each local runtime: whether the `claude` / `codex` binary is on PATH and whether you're logged in (reading the account from `~/.claude.json` / `~/.codex/auth.json`).
+
+**TUI fixes**
+
+- **Dedicated rendering for built-in tools** — Claude Code / Codex tools now render with purpose-built timeline UI instead of raw JSON: `Edit` as a colored diff, `TodoWrite` as a checklist, `Write` as a file preview, `Read`/`Bash`/`Grep` via the file/shell/grep views, plus clean summaries for `Task`, `ToolSearch`, and `WebFetch`.
+- **Mode indicator** — a `PLAN MODE` / `FULL RESEARCH` chip now sits inline with the shortcut hints, and the input box tints when plan mode is active, so the current mode is always visible. `/plan` on the home screen arms plan mode for the next session you start.
+- **Solid overlays** — the `/model`, `/llm`, and `/provider` selector now paints a solid panel instead of letting the conversation bleed through it, and clips long rows so its border stays intact on narrow terminals.
+- **Quit takes intent** — pressing `q` no longer quits. Use `Ctrl+D`, or `Ctrl+C` twice (the first press shows a confirmation); `Ctrl+C` while a turn is running stops the turn instead.
+- **Short conversations anchor to the top** — opening an older, short chat now shows messages from the top instead of jammed against the input box; the feed only bottom-anchors once it overflows the viewport.
+- **Faster timeline rendering** — tool-result formatting is now cached per item, so the feed no longer re-parses every result on each animation frame (~20fps while busy). Large outputs (e.g. a megabyte page fetch) no longer stall the UI; the full result is still saved, only what's laid out on screen is bounded.
+- **Wording** — "New research" → "New session" and related hints, reflecting that Scira now runs coding and local-agent sessions too.
+
+**Internal**
+
+- **Bun-native runtime** — the test runner moved from vitest to `bun test`, and core utilities now use Bun APIs instead of Node shims: `Bun.spawn`/`Bun.spawnSync` for subprocesses, `Bun.file()`/`Bun.write()` for file I/O, `Bun.serve` for the OAuth callback, `Bun.which`/`Bun.version` for the doctor checks, and Web Crypto (`crypto.getRandomValues`/`crypto.randomUUID` + `Bun.CryptoHasher`) for PKCE/IDs. `scira doctor` now also reports the Bun runtime version.
+
+</Step>
+
+<Step>
+
 ### 0.1.5 — June 13, 2026
 
 **TUI fixes**

@@ -1,11 +1,13 @@
 import process from "node:process";
 import { readFileSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 export const MANAGED_ENV_KEYS = [
   "AI_GATEWAY_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
   "XAI_API_KEY",
   "CLOUDFLARE_ACCOUNT_ID",
   "CLOUDFLARE_API_TOKEN",
@@ -85,7 +87,7 @@ export async function setEnvKey(name: string, value: string): Promise<void> {
   await mkdir(join(homedir(), ".scira"), { recursive: true });
   let content = "";
   try {
-    content = await readFile(path, "utf8");
+    content = await Bun.file(path).text();
   } catch {
     content = "";
   }
@@ -98,6 +100,6 @@ export async function setEnvKey(name: string, value: string): Promise<void> {
     if (lines.length && lines[lines.length - 1] === "") lines.pop();
     lines.push(entry);
   }
-  await writeFile(path, `${lines.join("\n")}\n`);
+  await Bun.write(path, `${lines.join("\n")}\n`);
   process.env[name] = value;
 }

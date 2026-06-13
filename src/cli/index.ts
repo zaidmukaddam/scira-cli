@@ -5,8 +5,9 @@ if (typeof Bun === "undefined") {
   console.error("scira requires Bun. Install it from https://bun.sh and run: bun run dist/cli/index.js");
   process.exit(1);
 }
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import sade from "sade";
@@ -24,7 +25,7 @@ import { loadConfig } from "../config/load-config.js";
 import { createRun, findRun, listRuns, summarizeRun, verificationReport, getRunPaths } from "../storage/run-store.js";
 import { readJsonl } from "../storage/jsonl.js";
 import { type Source, type Claim } from "../types/index.js";
-import { runResearchAgent } from "../agent/research-agent.js";
+import { runResearchAgent } from "../agent/main-agent.js";
 import { openShell } from "./shell/shell.js";
 import { openTui, openTuiHome } from "./shell/tui.js";
 import { detectEnv } from "../providers/llm/readiness.js";
@@ -146,7 +147,7 @@ prog
     const runPath = await findRun(runId, config);
     let output: string;
     if (fmt === "md") {
-      output = await readFile(`${runPath}/report.md`, "utf8");
+      output = await Bun.file(`${runPath}/report.md`).text();
     } else {
       const { toJson, toCsv } = await import("../export/formatters.js");
       const paths = getRunPaths(runPath);
@@ -162,7 +163,7 @@ prog
       const { writeFile, mkdir } = await import("node:fs/promises");
       const { dirname } = await import("node:path");
       await mkdir(dirname(opts.output), { recursive: true });
-      await writeFile(opts.output, output, "utf8");
+      await Bun.write(opts.output, output);
       console.log(`Exported to ${opts.output}`);
     } else {
       console.log(output);
@@ -355,6 +356,9 @@ prog
     const nodeCheck = checkNodeVersion(20);
     const nodeStatus = nodeCheck.ok ? "ok" : "fail";
     console.log(`Node:           ${process.version} (${nodeStatus}, requires >=${nodeCheck.required})`);
+    const bunVersion = await getBunVersion();
+    const bunOk = bunVersion !== null && versionAtLeast(bunVersion, "1.2.0");
+    console.log(`Bun:            ${bunVersion ?? "not found"} (${bunOk ? "ok" : "fail"}, requires >=1.2.0)`);
     console.log(`LLM provider:   ${config.llmProvider}`);
     console.log(`Model:          ${config.model}`);
     console.log(`Search provider: ${config.search.provider}`);
@@ -366,6 +370,24 @@ prog
       const tag = check.required ? " (required)" : "";
       console.log(`  ${status} ${check.name}${tag}  - ${check.purpose}`);
     }
+
+    console.log("");
+    console.log("Local agent runtimes (claude-code / codex providers):");
+    // Claude Code's token lives in the Keychain on macOS, but the logged-in
+    // account metadata is mirrored in ~/.claude.json (oauthAccount), so that's a
+    // reliable, cross-platform login check. Codex stores a readable auth file.
+    const claudeOnPath = await commandResolves("claude");
+    const claudeAccount = readClaudeAccount();
+    const claudeStatus = !claudeOnPath ? "missing" : claudeAccount ? "ok     " : "no auth";
+    const claudeWho = claudeAccount ? ` (logged in as ${claudeAccount})` : "";
+    console.log(`  ${claudeStatus} claude-code  - "claude" ${claudeOnPath ? "on PATH" : "not on PATH (install Claude Code)"}, login ${claudeAccount ? "found" : "not found"}${claudeWho}`);
+    if (claudeOnPath && !claudeAccount) console.log(`           Tip: run "claude" and use /login (or "claude doctor" to check) — no API key needed.`);
+
+    const codexOnPath = await commandResolves("codex");
+    const codexLoggedIn = existsSync(join(homedir(), ".codex", "auth.json"));
+    const codexStatus = !codexOnPath ? "missing" : codexLoggedIn ? "ok     " : "no auth";
+    console.log(`  ${codexStatus} codex  - "codex" ${codexOnPath ? "on PATH" : "not on PATH (install Codex)"}, login ${codexLoggedIn ? "found" : "not found"}`);
+    if (codexOnPath && !codexLoggedIn) console.log(`           Tip: run "codex login" to authenticate without an API key.`);
 
     console.log("");
     console.log("MCP servers:");
@@ -412,6 +434,7 @@ prog
     const missingRequired = checks.filter((c) => c.required && !c.present);
     const blockers: string[] = [];
     if (!nodeCheck.ok) blockers.push(`upgrade Node to >=${nodeCheck.required}`);
+    if (!bunOk) blockers.push(bunVersion ? "upgrade Bun to >=1.2.0" : "install Bun (https://bun.sh) — Scira runs on the Bun runtime");
     if (missingRequired.length > 0) {
       blockers.push(`set ${missingRequired.map((c) => c.name).join(", ")} in ~/.scira/.env or .scira/.env in your project`);
     }
@@ -450,16 +473,35 @@ function checkNodeVersion(required: number): { ok: boolean; required: number; cu
   return { ok: current >= required, required, current };
 }
 
-async function commandResolves(command: string): Promise<boolean> {
-  const { exec } = await import("node:child_process");
-  const { promisify } = await import("node:util");
-  const which = process.platform === "win32" ? "where" : "command -v";
+/** The logged-in Claude Code account email from ~/.claude.json, or null if not logged in. */
+function readClaudeAccount(): string | null {
   try {
-    await promisify(exec)(`${which} ${command}`);
-    return true;
+    const raw = readFileSync(join(homedir(), ".claude.json"), "utf8");
+    const account = (JSON.parse(raw) as { oauthAccount?: { emailAddress?: string } }).oauthAccount;
+    return account?.emailAddress ?? null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** The running Bun version (e.g. "1.3.14"), or null if not running under Bun. */
+function getBunVersion(): string | null {
+  return typeof Bun !== "undefined" ? Bun.version : null;
+}
+
+/** True when `version` (semver) is >= `min` (semver). */
+function versionAtLeast(version: string, min: string): boolean {
+  const a = version.split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const b = min.split(".").map((n) => Number.parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? 0, y = b[i] ?? 0;
+    if (x !== y) return x > y;
+  }
+  return true;
+}
+
+function commandResolves(command: string): boolean {
+  return Bun.which(command) !== null;
 }
 
 try {

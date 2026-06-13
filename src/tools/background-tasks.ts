@@ -1,6 +1,5 @@
-import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 export type BackgroundTaskStatus = "running" | "exited" | "killed";
@@ -69,7 +68,7 @@ export class BackgroundTaskManager {
   private runtime = new Map<string, RuntimeTask>();
   private records: BackgroundTaskRecord[] = [];
   private loaded = false;
-  private readonly sessionToken = randomUUID();
+  private readonly sessionToken = crypto.randomUUID();
 
   constructor(
     private readonly persistPath: string,
@@ -80,7 +79,7 @@ export class BackgroundTaskManager {
     if (this.loaded) return;
     this.loaded = true;
     try {
-      const raw = await readFile(this.persistPath, "utf8");
+      const raw = await Bun.file(this.persistPath).text();
       const parsed: unknown = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         this.records = parsed.filter(isValidRecord);
@@ -113,7 +112,7 @@ export class BackgroundTaskManager {
 
   private async persist(): Promise<void> {
     await mkdir(dirname(this.persistPath), { recursive: true });
-    await writeFile(this.persistPath, JSON.stringify(this.records, null, 2) + "\n");
+    await Bun.write(this.persistPath, JSON.stringify(this.records, null, 2) + "\n");
   }
 
   private syncRecord(task: RuntimeTask): void {

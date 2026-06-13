@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
@@ -27,7 +27,7 @@ function nextTodoId(existing: TodoItem[]): string {
 
 async function loadTodos(path: string): Promise<TodoItem[]> {
   try {
-    const raw = await readFile(path, "utf8");
+    const raw = await Bun.file(path).text();
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(
@@ -41,7 +41,7 @@ async function loadTodos(path: string): Promise<TodoItem[]> {
 
 async function saveTodos(path: string, items: TodoItem[]): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify(items, null, 2) + "\n");
+  await Bun.write(path, JSON.stringify(items, null, 2) + "\n");
 }
 
 function formatTodoList(items: TodoItem[]): string {

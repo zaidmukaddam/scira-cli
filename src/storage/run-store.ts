@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { SciraConfig, RunState, Source, Claim } from "../types/index.js";
 import { createRunId } from "../utils/ids.js";
@@ -46,27 +46,27 @@ export async function createRun(goal: string, config: SciraConfig, projectRoot =
   const paths = getRunPaths(runPath);
   await mkdir(paths.artifacts, { recursive: true });
   await mkdir(paths.snapshots, { recursive: true });
-  await writeFile(paths.goal, `# Goal\n\n${goal}\n`);
-  await writeFile(paths.plan, "# Research Plan\n\nPending plan generation.\n");
-  await writeFile(paths.research, researchInstructions());
-  await writeFile(paths.scope, `${JSON.stringify({ goal, maxSources: config.maxSources, citationPolicy: config.citationPolicy }, null, 2)}\n`);
-  await writeFile(paths.progress, progressText("created", "Generate and approve research plan."));
-  await writeFile(paths.sources, "");
-  await writeFile(paths.claims, "");
-  await writeFile(paths.notes, "# Notes\n\n");
-  await writeFile(paths.report, "# Report\n\nDraft not generated yet.\n");
-  await writeFile(paths.handoff, handoffText(goal, "created"));
+  await Bun.write(paths.goal, `# Goal\n\n${goal}\n`);
+  await Bun.write(paths.plan, "# Research Plan\n\nPending plan generation.\n");
+  await Bun.write(paths.research, researchInstructions());
+  await Bun.write(paths.scope, `${JSON.stringify({ goal, maxSources: config.maxSources, citationPolicy: config.citationPolicy }, null, 2)}\n`);
+  await Bun.write(paths.progress, progressText("created", "Generate and approve research plan."));
+  await Bun.write(paths.sources, "");
+  await Bun.write(paths.claims, "");
+  await Bun.write(paths.notes, "# Notes\n\n");
+  await Bun.write(paths.report, "# Report\n\nDraft not generated yet.\n");
+  await Bun.write(paths.handoff, handoffText(goal, "created"));
   await logEvent(paths.root, "run.created", { goal });
   return summarizeRun(paths.root);
 }
 
 export async function summarizeRun(runPath: string): Promise<RunState> {
   const paths = getRunPaths(runPath);
-  const goal = (await readFile(paths.goal, "utf8").catch(() => "")).replace(/^# Goal\s*/u, "").trim();
-  const title = (await readFile(join(runPath, "title.md"), "utf8").catch(() => "")).trim() || undefined;
+  const goal = (await Bun.file(paths.goal).text().catch(() => "")).replace(/^# Goal\s*/u, "").trim();
+  const title = (await Bun.file(join(runPath, "title.md")).text().catch(() => "")).trim() || undefined;
   const sources = await readJsonl<Source>(paths.sources);
   const claims = await readJsonl<Claim>(paths.claims);
-  const report = await readFile(paths.report, "utf8").catch(() => "");
+  const report = await Bun.file(paths.report).text().catch(() => "");
   // last activity = newest mtime among the files that change as a run progresses
   const mtimes = await Promise.all(
     [join(runPath, "convo.json"), paths.report, runPath].map((p) =>
@@ -89,7 +89,7 @@ export async function summarizeRun(runPath: string): Promise<RunState> {
 }
 
 export async function setRunTitle(runPath: string, title: string): Promise<void> {
-  await writeFile(join(runPath, "title.md"), title.trim());
+  await Bun.write(join(runPath, "title.md"), title.trim());
 }
 
 export async function deleteRun(runPath: string): Promise<void> {

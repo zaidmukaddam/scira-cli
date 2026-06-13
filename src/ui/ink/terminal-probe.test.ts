@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { luminance, parseOscBackgroundColor, themeFromLuminance } from "./terminal-probe.js";
 
 describe("terminal-probe", () => {

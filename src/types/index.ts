@@ -6,11 +6,23 @@ export const ThemeSchema = z.enum(["dark", "light", "auto"]).default("auto");
 
 export const SciraConfigSchema = z.object({
   theme: ThemeSchema,
-  llmProvider: z.enum(["gateway", "xai", "workers-ai", "huggingface"]).default("gateway"),
+  llmProvider: z.enum(["gateway", "xai", "workers-ai", "huggingface", "claude-code", "codex"]).default("gateway"),
   model: z.string().default("deepseek/deepseek-v4-flash"),
   // last selected model per LLM provider, restored when switching back
   lastModels: z.record(z.string(), z.string()).default({}),
   approvalMode: ApprovalModeSchema.default("suggest"),
+  // Settings for the local agent harnesses (claude-code / codex providers).
+  harness: z.object({
+    // Claude Code extended-thinking control.
+    thinking: z.enum(["off", "on", "adaptive"]).default("adaptive"),
+    // Codex reasoning effort for reasoning-capable models.
+    reasoningEffort: z.enum(["low", "medium", "high"]).default("medium"),
+    // Hard cap on Claude Code internal turns per prompt (unset = CLI default).
+    maxTurns: z.number().int().positive().optional()
+  }).default({
+    thinking: "adaptive",
+    reasoningEffort: "medium"
+  }),
   alwaysAllowLinks: z.boolean().default(false),
   runDirectory: z.string().default(".scira/runs"),
   maxSources: z.number().int().min(1).max(100).default(20),

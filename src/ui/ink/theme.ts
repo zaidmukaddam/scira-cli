@@ -1,5 +1,4 @@
 import { readFileSync, unwatchFile, watchFile } from "node:fs";
-import { execSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -137,21 +136,17 @@ function readEditorColorTheme(): "dark" | "light" | undefined {
 function readSystemAppearance(): "dark" | "light" | undefined {
   if (process.platform === "darwin") {
     try {
-      const style = execSync("defaults read -g AppleInterfaceStyle 2>/dev/null", {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      }).trim();
-      return style === "Dark" ? "dark" : "light";
+      const r = Bun.spawnSync(["defaults", "read", "-g", "AppleInterfaceStyle"], { stdout: "pipe", stderr: "ignore" });
+      // The key is absent (and `defaults` exits non-zero) in light mode.
+      return r.stdout.toString().trim() === "Dark" ? "dark" : "light";
     } catch {
       return "light";
     }
   }
   if (process.platform === "linux") {
     try {
-      const scheme = execSync("gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null", {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      }).trim();
+      const r = Bun.spawnSync(["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"], { stdout: "pipe", stderr: "ignore" });
+      const scheme = r.stdout.toString().trim();
       if (/dark/i.test(scheme)) return "dark";
       if (/light/i.test(scheme)) return "light";
     } catch {

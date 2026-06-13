@@ -66,6 +66,10 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
   const planModeRef = useRef(false);
   const [planMode, setPlanModeState] = useState(false);
   const setPlanMode = useCallback((active: boolean) => { planModeRef.current = active; setPlanModeState(active); }, []);
+  // Plan-mode preference armed from the home screen, applied when the next run opens.
+  const pendingPlanModeRef = useRef(false);
+  const [pendingPlanMode, setPendingPlanModeState] = useState(false);
+  const setPendingPlanMode = useCallback((active: boolean) => { pendingPlanModeRef.current = active; setPendingPlanModeState(active); }, []);
 
   const [usage, setUsage] = useState<Record<string, ModelUsage>>({});
   const turnsRef = useRef<TurnUsage[]>([]);
@@ -248,9 +252,9 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
 
   const runTurnRef = useRef<(prompt: string, runPathOverride?: string) => Promise<void>>(async () => { });
   const { refreshSessions, refreshRun, openRun: openRunBase } = useSession({
-    config, currentRunPath, conversationRef, feedRef, turnsRef, startedRef,
+    config, currentRunPath, conversationRef, feedRef, turnsRef, startedRef, pendingPlanModeRef,
     setSessions, setRunState, setCurrentRunPath, setInputText, setCursorPos,
-    setFeed, setUsage, setScrollOffset, setScreen, setMode, setPlanMode,
+    setFeed, setUsage, setScrollOffset, setScreen, setMode, setPlanMode, setPendingPlanMode,
     setBusy, setApprovalPending, getSubscriber,
   });
 
@@ -339,10 +343,10 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
 
   const { submitHome, submitChat, stopTurn } = useSubmit({
     state: { config, currentRunPath, sessions, selectedIdx, busy, usage, pendingRerun },
-    refs: { queuedPromptRef, fullModeRef, planModeRef, conversationRef, feedRef },
+    refs: { queuedPromptRef, fullModeRef, planModeRef, pendingPlanModeRef, conversationRef, feedRef },
     setters: {
       setApprovalPending, setInputText, setCursorPos, setInputHistory, setHistoryIndex, setHelpOpen,
-      setNotice, setBusy, setScreen, setFeed, setRunState, setPendingRerun, setMode, setPlanMode, setConfig, setMcpOpen,
+      setNotice, setBusy, setScreen, setFeed, setRunState, setPendingRerun, setMode, setPlanMode, setPendingPlanMode, setConfig, setMcpOpen,
       setHeroHidden,
     },
     actions: { pushFeed, refreshSessions, openRun, openMenu, handleSettings, runTurn, exit },
@@ -523,8 +527,8 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
         />
         <Box flexDirection="column" paddingBottom={1}>
           <CommandMenuBox activeSuggestions={activeSuggestions} activeSuggestionKind={activeSuggestionKind} commandMenuIndex={commandMenuIndex} innerWidth={innerWidth} sessions={sessions} config={config} />
-          <InputBar inputLines={inputLines} cursorLine={cursorLine} cursorCol={cursorCol} showCursor={showCursor} approvalPending={inputBlocked} busy={busy} frame={frame} boxWidth={boxWidth} modelName={modelName} config={config} />
-          <HintLine screen={screen} busy={busy} config={config} />
+          <InputBar inputLines={inputLines} cursorLine={cursorLine} cursorCol={cursorCol} showCursor={showCursor} approvalPending={inputBlocked} busy={busy} frame={frame} boxWidth={boxWidth} modelName={modelName} planMode={planMode} config={config} />
+          <HintLine screen={screen} busy={busy} modeLabel={pendingPlanMode ? "PLAN MODE" : ""} modeColor="cyan" config={config} />
         </Box>
         <MenuDialog menu={menu} cols={cols} rows={rows} config={config} />
         <McpDialog
@@ -550,7 +554,7 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
       )}
       {busy && <AnimationTick setBlink={setBlink} setFrame={setFrame} setReasoningTick={setReasoningTick} />}
       <TopBar screen={screen} runState={runState} fullMode={fullMode} planMode={planMode} activeUsage={activeUsage} busy={busy} frame={frame} cwdDisplay={CWD_DISPLAY} config={config} />
-      <Box flexDirection="column" height={contentRows} flexShrink={0} justifyContent="flex-end" paddingTop={1} overflow="hidden">
+      <Box flexDirection="column" height={contentRows} flexShrink={0} justifyContent={feedLines.length > contentRows ? "flex-end" : "flex-start"} paddingTop={1} overflow="hidden">
         {visibleLines}
       </Box>
       <ChatInputChrome>
@@ -558,8 +562,8 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
         <HelpBox open={helpOpen} innerWidth={innerWidth} config={config} />
         {approvalPending && <ApprovalBox toolName={approvalPending.toolName} description={approvalPending.description} innerWidth={innerWidth} config={config} />}
         {linkPending && <LinkOpenBox url={linkPending.url} innerWidth={innerWidth} config={config} />}
-        <InputBar inputLines={inputLines} cursorLine={cursorLine} cursorCol={cursorCol} showCursor={showCursor} approvalPending={inputBlocked} busy={busy} frame={frame} boxWidth={boxWidth} modelName={modelName} config={config} />
-        <HintLine screen={screen} busy={busy} scrollLabel={scrollLabel} hasDoneGroups={doneGroupKeys.length > 0} hasFocusedGroup={focusedGroupKey !== null} hasLinkHover={hasLinkHover || !!linkPending} alwaysAllowLinks={config.alwaysAllowLinks} config={config} />
+        <InputBar inputLines={inputLines} cursorLine={cursorLine} cursorCol={cursorCol} showCursor={showCursor} approvalPending={inputBlocked} busy={busy} frame={frame} boxWidth={boxWidth} modelName={modelName} planMode={planMode} config={config} />
+        <HintLine screen={screen} busy={busy} modeLabel={fullMode ? "FULL RESEARCH" : planMode ? "PLAN MODE" : ""} modeColor={fullMode ? "magenta" : "cyan"} scrollLabel={scrollLabel} hasDoneGroups={doneGroupKeys.length > 0} hasFocusedGroup={focusedGroupKey !== null} hasLinkHover={hasLinkHover || !!linkPending} alwaysAllowLinks={config.alwaysAllowLinks} config={config} />
       </ChatInputChrome>
       <MenuDialog menu={menu} cols={cols} rows={rows} config={config} />
       <McpDialog

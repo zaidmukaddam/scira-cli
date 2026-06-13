@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 export async function appendJsonl(path: string, value: unknown): Promise<void> {
@@ -8,7 +8,7 @@ export async function appendJsonl(path: string, value: unknown): Promise<void> {
 
 export async function readJsonl<T>(path: string): Promise<T[]> {
   try {
-    const text = await readFile(path, "utf8");
+    const text = await Bun.file(path).text();
     const results: T[] = [];
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;

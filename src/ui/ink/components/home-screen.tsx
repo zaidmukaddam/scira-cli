@@ -144,7 +144,7 @@ export function HomeScreen({
     clickMap.set(rowBase, (_x) => {
       setSelectedIdx(newIdx);
       if (inputText.trim()) void submitHome(inputText);
-      else setNotice("Type a question below to start a new research run.");
+      else setNotice("Type a question below to start a new session.");
     });
     hoverMap.set(rowBase, newIdx);
     clickMap.set(rowBase + 1, (_x) => exit());
@@ -205,7 +205,7 @@ export function HomeScreen({
             <Box flexDirection="column" flexGrow={1}>
               <Box gap={heroLayout.showSubtitle || heroLayout.showVersion ? 2 : 0} marginBottom={1}>
                 <Text bold color={theme.text}>scira</Text>
-                {heroLayout.showSubtitle ? <Text color={theme.textDim}>research agent</Text> : null}
+                {heroLayout.showSubtitle ? <Text color={theme.textDim}>research & coding agent</Text> : null}
                 {heroLayout.showVersion ? <Text color={theme.textDim}>v{pkgVersion}</Text> : null}
               </Box>
               {heroLayout.showTagline ? (
@@ -232,7 +232,7 @@ export function HomeScreen({
               ) : null}
               <Box height={1} />
               <Box>
-                <Text bold={newActive} color={newActive ? theme.text : theme.textDim}>New research</Text>
+                <Text bold={newActive} color={newActive ? theme.text : theme.textDim}>New session</Text>
                 {heroLayout.showActionHints ? (
                   <>
                     <Box flexGrow={1} />

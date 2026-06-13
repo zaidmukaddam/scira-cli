@@ -1,21 +1,18 @@
-import { createHash, randomBytes } from "node:crypto";
-import { createServer } from "node:http";
-import { exec } from "node:child_process";
 import type { SciraConfig } from "../types/index.js";
 import { saveGlobalMcpConfig } from "../config/load-config.js";
 
 type McpServer = SciraConfig["mcp"]["servers"][number];
 
-function toBase64Url(buf: Buffer): string {
-  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+function toBase64Url(buf: Uint8Array): string {
+  return Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function createVerifier(): string {
-  return toBase64Url(randomBytes(48));
+  return toBase64Url(crypto.getRandomValues(new Uint8Array(48)));
 }
 
 function createChallenge(verifier: string): string {
-  return toBase64Url(createHash("sha256").update(verifier).digest());
+  return toBase64Url(new Bun.CryptoHasher("sha256").update(verifier).digest());
 }
 
 async function fetchJson<T>(url: string): Promise<T | null> {
@@ -158,31 +155,38 @@ function patchClientId(mcp: SciraConfig["mcp"], name: string, clientId: string, 
 }
 
 function openBrowser(url: string): void {
-  const cmd =
-    process.platform === "darwin" ? `open "${url}"` :
-    process.platform === "win32"  ? `start "" "${url}"` :
-    `xdg-open "${url}"`;
-  exec(cmd, () => {});
+  const argv =
+    process.platform === "darwin" ? ["open", url] :
+    process.platform === "win32"  ? ["cmd", "/c", "start", "", url] :
+    ["xdg-open", url];
+  Bun.spawn(argv, { stdout: "ignore", stderr: "ignore" });
 }
 
 function waitForCallback(port: number, timeoutMs = 120_000): Promise<{ code: string; state: string }> {
   return new Promise((resolve, reject) => {
-    const server = createServer((req, res) => {
-      const u = new URL(req.url ?? "/", `http://localhost:${port}`);
-      const code = u.searchParams.get("code");
-      const state = u.searchParams.get("state");
-      res.writeHead(200, { "Content-Type": "text/html" });
-      res.end("<html><body><h2>OAuth connected — you can close this tab.</h2></body></html>");
-      server.close();
-      if (code && state) resolve({ code, state });
-      else reject(new Error("OAuth callback missing code or state"));
+    const server = Bun.serve({
+      port,
+      hostname: "127.0.0.1",
+      fetch(req) {
+        const u = new URL(req.url);
+        const code = u.searchParams.get("code");
+        const state = u.searchParams.get("state");
+        queueMicrotask(() => {
+          clearTimeout(timer);
+          // Graceful stop: let the response flush to the browser before closing.
+          void server.stop();
+          if (code && state) resolve({ code, state });
+          else reject(new Error("OAuth callback missing code or state"));
+        });
+        return new Response("<html><body><h2>OAuth connected — you can close this tab.</h2></body></html>", {
+          headers: { "Content-Type": "text/html" },
+        });
+      },
     });
-    server.listen(port, "127.0.0.1");
     const timer = setTimeout(() => {
-      server.close();
+      void server.stop(true);
       reject(new Error("OAuth flow timed out (2 min). Run `scira mcp oauth <name>` to retry."));
     }, timeoutMs);
-    server.once("close", () => clearTimeout(timer));
   });
 }
 
@@ -301,7 +305,7 @@ export async function runOAuthFlow(
 
   const verifier = createVerifier();
   const challenge = createChallenge(verifier);
-  const state = toBase64Url(randomBytes(16));
+  const state = toBase64Url(crypto.getRandomValues(new Uint8Array(16)));
   const scope = srv.oauthScopes ?? endpoints.suggestedScope ?? undefined;
 
   const params = new URLSearchParams({

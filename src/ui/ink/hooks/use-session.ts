@@ -1,5 +1,4 @@
 import React, { useCallback } from "react";
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { SciraConfig, RunState } from "../../../types/index.js";
 import { listRuns, summarizeRun } from "../../../storage/run-store.js";
@@ -13,6 +12,7 @@ type SessionOptions = {
   feedRef: React.RefObject<FeedItem[]>;
   turnsRef: React.RefObject<TurnUsage[]>;
   startedRef: React.RefObject<string | undefined>;
+  pendingPlanModeRef: React.RefObject<boolean>;
   setSessions: (sessions: RunState[]) => void;
   setRunState: React.Dispatch<React.SetStateAction<RunState | null>>;
   setCurrentRunPath: (path: string | undefined) => void;
@@ -24,6 +24,7 @@ type SessionOptions = {
   setScreen: (screen: Screen) => void;
   setMode: (full: boolean) => void;
   setPlanMode: (active: boolean) => void;
+  setPendingPlanMode: (active: boolean) => void;
   setBusy: (busy: boolean) => void;
   setApprovalPending: React.Dispatch<React.SetStateAction<{ toolName: string; description: string; resolve: (v: boolean) => void } | null>>;
   getSubscriber: () => SessionSubscriber;
@@ -37,9 +38,9 @@ export function useSession(o: SessionOptions): {
   openRun: (runPath: string, initialQuestion?: string) => Promise<OpenRunResult | undefined>;
 } {
   const {
-    config, currentRunPath, conversationRef, feedRef, turnsRef, startedRef,
+    config, currentRunPath, conversationRef, feedRef, turnsRef, startedRef, pendingPlanModeRef,
     setSessions, setRunState, setCurrentRunPath, setInputText, setCursorPos,
-    setFeed, setUsage, setScrollOffset, setScreen, setMode, setPlanMode,
+    setFeed, setUsage, setScrollOffset, setScreen, setMode, setPlanMode, setPendingPlanMode,
     setBusy, setApprovalPending, getSubscriber,
   } = o;
 
@@ -54,7 +55,11 @@ export function useSession(o: SessionOptions): {
   }, [currentRunPath]);
 
   const openRun = useCallback(async (runPath: string, initialQuestion?: string): Promise<OpenRunResult | undefined> => {
-    if (runPath !== currentRunPath) setPlanMode(false);
+    if (runPath !== currentRunPath) {
+      // Honor a plan-mode preference armed from the home screen, then disarm it.
+      setPlanMode(pendingPlanModeRef.current);
+      setPendingPlanMode(false);
+    }
     setCurrentRunPath(runPath);
     setInputText("");
     setCursorPos(0);
@@ -79,7 +84,7 @@ export function useSession(o: SessionOptions): {
     }
 
     try {
-      const raw = await readFile(join(runPath, "convo.json"), "utf8");
+      const raw = await Bun.file(join(runPath, "convo.json")).text();
       const saved = JSON.parse(raw) as { feed?: FeedItem[]; messages?: typeof conversationRef.current; usage?: SessionUsage };
       if (saved.feed && saved.feed.length > 0) {
         const filteredFeed = saved.feed.filter((item: FeedItem) => !(item.kind === "status" && item.text === "This will wipe the conversation history. Press /rerun again to confirm."));

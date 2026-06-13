@@ -1,5 +1,5 @@
 export const appName = 'Scira';
-export const appVersion = '0.1.3';
+export const appVersion = '0.1.6';
 export const docsRoute = '/docs';
 export const docsImageRoute = '/og/docs';
 export const docsContentRoute = '/llms.mdx/docs';

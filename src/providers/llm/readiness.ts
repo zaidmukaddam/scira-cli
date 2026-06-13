@@ -39,20 +39,26 @@ export type EnvCheck = {
   required: boolean;
 };
 
-const LLM_ENV_CHECKS: { name: string; provider: "gateway" | "xai" | "workers-ai" | "huggingface"; purpose: string }[] = [
+type LlmEnvProvider = "gateway" | "xai" | "workers-ai" | "huggingface" | "claude-code" | "codex";
+
+const LLM_ENV_CHECKS: { name: string; provider: LlmEnvProvider; purpose: string }[] = [
   { name: AI_GATEWAY_ENV, provider: "gateway", purpose: "Vercel AI Gateway LLM access" },
+  { name: "ANTHROPIC_API_KEY", provider: "claude-code", purpose: "Claude Code (local harness) access" },
+  { name: "OPENAI_API_KEY", provider: "codex", purpose: "Codex (local harness) access" },
   { name: "XAI_API_KEY", provider: "xai", purpose: "xAI (Grok) LLM access" },
   { name: "CLOUDFLARE_ACCOUNT_ID", provider: "workers-ai", purpose: "Cloudflare Workers AI account" },
   { name: "CLOUDFLARE_API_TOKEN", provider: "workers-ai", purpose: "Cloudflare Workers AI LLM access" },
   { name: "HF_API_KEY", provider: "huggingface", purpose: "HuggingFace Inference API access" }
 ];
 
-export function detectEnv(provider: SearchProvider, llmProvider: "gateway" | "xai" | "workers-ai" | "huggingface" = "gateway"): EnvCheck[] {
+export function detectEnv(provider: SearchProvider, llmProvider: LlmEnvProvider = "gateway"): EnvCheck[] {
+  // Local harness providers authenticate via the CLI login, so their API key is optional.
+  const harnessActive = llmProvider === "claude-code" || llmProvider === "codex";
   const checks: EnvCheck[] = LLM_ENV_CHECKS.map((c) => ({
     name: c.name,
     present: hasEnv(c.name),
     purpose: c.purpose,
-    required: c.provider === llmProvider
+    required: c.provider === llmProvider && !harnessActive
   }));
   for (const key of Object.keys(PROVIDER_ENV) as SearchProvider[]) {
     const name = PROVIDER_ENV[key];

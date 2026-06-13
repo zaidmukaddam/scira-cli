@@ -113,6 +113,9 @@ export function useKeyboard(o: KeyboardOptions): void {
   const { sessionsModalOpen, setSessionsModalOpen, sessionsModalIdx, setSessionsModalIdx, sessions, deleteSession, selectedIdx, setSelectedIdx, setHeroHidden, openRun, submitHome } = o.home;
 
   const deleteArmedRef = useRef<number | null>(null);
+  // Quit requires confirmation: first Ctrl+C arms, second within the window quits.
+  const quitArmedRef = useRef(false);
+  const quitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const editInput = (char: string, key: InkKey): boolean => {
     const deleteWordBefore = () => {
@@ -167,6 +170,19 @@ export function useKeyboard(o: KeyboardOptions): void {
     if (char && (char.includes("[<") || /^\d+;\d+;\d+[Mm]$/u.test(char))) return;
     // OSC background-color query responses leak as stdin when terminals reply to theme probes.
     if (char && (/\]11;rgb:/u.test(char) || /^11;rgb:/u.test(char))) return;
+    // Quit handling (all screens): Ctrl+C twice (with warning) or Ctrl+D.
+    if (key.ctrl && char === "c") {
+      if (busy) { stopTurn(); quitArmedRef.current = false; return; }
+      if (quitArmedRef.current) { exit(); return; }
+      quitArmedRef.current = true;
+      setNotice("Press Ctrl+C again to quit (or Ctrl+D).");
+      if (quitTimerRef.current) clearTimeout(quitTimerRef.current);
+      quitTimerRef.current = setTimeout(() => { quitArmedRef.current = false; }, 3000);
+      // Don't let the disarm timer keep the process alive after a quit.
+      quitTimerRef.current.unref?.();
+      return;
+    }
+    if (key.ctrl && char === "d" && !inputText) { exit(); return; }
     if (approvalPending) {
       if (char === "y" || char === "Y" || key.return) {
         const p = approvalPending;
@@ -326,15 +342,13 @@ export function useKeyboard(o: KeyboardOptions): void {
           setSessionsModalOpen(true);
           setSessionsModalIdx(0);
         } else if (selectedIdx === newIdx) {
-          setNotice("Type a question below to start a new research run.");
+          setNotice("Type a question below to start a new session.");
         } else if (selectedIdx === quitIdx) {
           exit();
         } else {
           void submitHome("");
         }
       }
-      else if (char === "q" && !inputText) exit();
-      else if (key.ctrl && char === "d" && !inputText) exit();
       else editInput(char, key);
     } else {
       if (!inputText && !busy) {

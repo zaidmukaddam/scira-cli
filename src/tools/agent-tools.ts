@@ -242,7 +242,7 @@ export function createResearchTools(
         if (needsApproval) {
           let description: string;
           if (harnessName === "report.md" && resolved.scope === "run") {
-            const existing = await readFile(resolved.abs, "utf8").catch(() => "");
+            const existing = await Bun.file(resolved.abs).text().catch(() => "");
             const parts = diffLines(existing, content);
             const added = parts.filter((p) => p.added).reduce((n, p) => n + (p.count ?? 0), 0);
             const removed = parts.filter((p) => p.removed).reduce((n, p) => n + (p.count ?? 0), 0);
@@ -261,7 +261,7 @@ export function createResearchTools(
           if (!await gate("writeFile", description)) return `Write to ${resolved.displayPath} rejected by user.`;
         }
         await mkdir(dirname(resolved.abs), { recursive: true });
-        await writeFile(resolved.abs, content);
+        await Bun.write(resolved.abs, content);
         const eventType = harnessName === "report.md" ? "report.updated" : harnessName === "plan.md" ? "plan.updated" : "file.written";
         await logEvent(runPath, eventType, { path: resolved.displayPath, scope: resolved.scope, chars: content.length });
         const where = resolved.scope === "workspace" ? "workspace" : "run";
@@ -282,7 +282,7 @@ export function createResearchTools(
         const harnessName = resolved.scope === "run" ? harnessBasename(resolved.displayPath) : null;
         const blocked = planModeBlocksEdit(getPlanMode, resolved.scope, harnessName);
         if (blocked) return blocked;
-        const current = await readFile(resolved.abs, "utf8");
+        const current = await Bun.file(resolved.abs).text();
         const occurrences = current.split(oldString).length - 1;
         if (occurrences === 0) {
           return `No match for the given oldString in ${resolved.displayPath}. No changes made.`;
@@ -301,7 +301,7 @@ export function createResearchTools(
             return `Edit to ${resolved.displayPath} rejected by user.`;
           }
         }
-        await writeFile(resolved.abs, current.replace(oldString, newString));
+        await Bun.write(resolved.abs, current.replace(oldString, newString));
         await logEvent(runPath, "file.edited", { path: resolved.displayPath, scope: resolved.scope });
         return `Edited ${resolved.displayPath}`;
       }
@@ -341,7 +341,7 @@ export function createResearchTools(
         }
         claims[idx] = { ...claims[idx], status, reason };
         await mkdir(dirname(claimsPath), { recursive: true });
-        await writeFile(claimsPath, claims.map((c) => JSON.stringify(c)).join("\n") + "\n");
+        await Bun.write(claimsPath, claims.map((c) => JSON.stringify(c)).join("\n") + "\n");
         await logEvent(runPath, "claim.verified", { id, status });
         return `Claim ${id} → ${status}`;
       }
@@ -354,7 +354,7 @@ export function createResearchTools(
       }),
       execute: async ({ path }) => {
         const resolved = resolveToolPath(runPath, workspacePath, path);
-        return truncate(await readFile(resolved.abs, "utf8"));
+        return truncate(await Bun.file(resolved.abs).text());
       }
     }),
 

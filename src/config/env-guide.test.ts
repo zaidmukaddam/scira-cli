@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { formatKeyGuide, formatMissingKeysHelp } from "./env-guide.js";
 
 describe("env-guide", () => {

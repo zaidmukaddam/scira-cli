@@ -2,7 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import { RunState, SciraConfig } from "../../../types/index.js";
 import { SPINNER_FRAMES, CHAT_COMMANDS, COMMAND_DESCRIPTIONS, MENU_VISIBLE } from "../constants.js";
-import { fmtTokens, wrapText } from "../lib/utils.js";
+import { fmtTokens, wrapText, displayWidth } from "../lib/utils.js";
 import { LLM_PROVIDER_LABELS } from "../../../providers/llm/registry.js";
 import { type ModelUsage } from "../types.js";
 import { type Screen } from "../types.js";
@@ -67,15 +67,18 @@ type InputBarProps = {
   frame: number;
   boxWidth: number;
   modelName: string;
+  planMode?: boolean;
   config: SciraConfig;
 };
 
-export function InputBar({ inputLines, cursorLine, cursorCol, showCursor, approvalPending, busy, frame, boxWidth, modelName, config }: InputBarProps): React.ReactElement {
+export function InputBar({ inputLines, cursorLine, cursorCol, showCursor, approvalPending, busy, frame, boxWidth, modelName, planMode, config }: InputBarProps): React.ReactElement {
   const theme = useTheme();
-  const borderColor = approvalPending ? theme.warning : busy ? theme.accentDim : theme.textDim;
-  const promptColor = approvalPending ? theme.warning : busy ? theme.accentDim : theme.accent;
+  // Plan mode tints the whole input box (unless an approval/busy state takes precedence).
+  const borderColor = approvalPending ? theme.warning : busy ? theme.accentDim : planMode ? "cyan" : theme.textDim;
+  const promptColor = approvalPending ? theme.warning : busy ? theme.accentDim : planMode ? "cyan" : theme.accent;
   const inputColor = approvalPending ? theme.textDim : theme.inputText;
-  const borderLabel = busy ? `${SPINNER_FRAMES[frame % SPINNER_FRAMES.length]} ${modelName}` : modelName;
+  const planTag = planMode ? "plan ◆ " : "";
+  const borderLabel = busy ? `${SPINNER_FRAMES[frame % SPINNER_FRAMES.length]} ${planTag}${modelName}` : `${planTag}${modelName}`;
   const labelMax = Math.max(0, boxWidth - 6);
   const label = borderLabel.length > labelMax ? borderLabel.slice(0, labelMax) : borderLabel;
   const dashCount = Math.max(1, boxWidth - label.length - 5);
@@ -105,15 +108,16 @@ export function InputBar({ inputLines, cursorLine, cursorCol, showCursor, approv
       ))}
       <Box width={boxWidth}>
         <Text color={borderColor}>{"╰" + "─".repeat(dashCount) + " "}</Text>
-        <Text color={theme.accent}>{label}</Text>
+        <Text color={planMode ? "cyan" : theme.accent}>{label}</Text>
         <Text color={borderColor}>{" ─╯"}</Text>
       </Box>
     </Box>
   );
 }
 
-export function HintLine({ screen, busy, scrollLabel, hasDoneGroups, hasFocusedGroup, hasLinkHover, alwaysAllowLinks, config }: { screen: Screen; busy: boolean; scrollLabel?: string; hasDoneGroups?: boolean; hasFocusedGroup?: boolean; hasLinkHover?: boolean; alwaysAllowLinks?: boolean; config: SciraConfig }): React.ReactElement {
+export function HintLine({ screen, busy, scrollLabel, hasDoneGroups, hasFocusedGroup, hasLinkHover, alwaysAllowLinks, modeLabel, modeColor, config }: { screen: Screen; busy: boolean; scrollLabel?: string; hasDoneGroups?: boolean; hasFocusedGroup?: boolean; hasLinkHover?: boolean; alwaysAllowLinks?: boolean; modeLabel?: string; modeColor?: string; config: SciraConfig }): React.ReactElement {
   const theme = useTheme();
+  const modeChip = modeLabel ? <Text backgroundColor={modeColor ?? "cyan"} color={theme.background} bold>{` ${modeLabel} `}</Text> : null;
   if (screen === "chat") {
     return (
       <Box gap={1}>
@@ -148,12 +152,9 @@ export function HintLine({ screen, busy, scrollLabel, hasDoneGroups, hasFocusedG
             </Text>
           </>
         ) : null}
-        {scrollLabel ? (
-          <>
-            <Box flexGrow={1} />
-            <Text color={theme.textDim}>{scrollLabel}</Text>
-          </>
-        ) : null}
+        {(modeChip || scrollLabel) ? <Box flexGrow={1} /> : null}
+        {modeChip}
+        {scrollLabel ? <Text color={theme.textDim}>{scrollLabel}</Text> : null}
       </Box>
     );
   }
@@ -165,7 +166,8 @@ export function HintLine({ screen, busy, scrollLabel, hasDoneGroups, hasFocusedG
       <Text color={theme.textDim}>{"|"}</Text>
       <Text color={theme.textDim}><Text bold color={theme.accent}>ESC</Text>:close</Text>
       <Text color={theme.textDim}>{"|"}</Text>
-      <Text color={theme.textDim}><Text bold color={theme.accent}>Q</Text>:quit</Text>
+      <Text color={theme.textDim}><Text bold color={theme.accent}>^D</Text>:quit</Text>
+      {modeChip ? <><Box flexGrow={1} />{modeChip}</> : null}
     </Box>
   );
 }
@@ -308,53 +310,83 @@ export function MenuDialog({ menu, cols, rows, config }: MenuDialogProps): React
   const dialogLeft = Math.max(0, Math.floor((cols - 4 - DIALOG_W) / 2));
   const dialogH = 5 + (menu.loading ? 1 : Math.min(DIALOG_ITEMS, menuFiltered.length) + (menuStart > 0 ? 1 : 0) + (menuFiltered.length - (menuStart + DIALOG_ITEMS) > 0 ? 1 : 0));
   const dialogTop = Math.max(1, Math.floor((rows - dialogH) / 2));
+  const bg = theme.userBandBackground ? { backgroundColor: theme.userBandBackground } : {};
+  const innerW = DIALOG_W - 2; // cells between the two border columns
+  // Draw the border as characters inside full-width background lines (like
+  // InputBar). Ink's box border + backgroundColor leaves unfilled gaps, so we
+  // compose each line ourselves: every line is one solid Text spanning DIALOG_W.
+  const line = (key: string, visibleLen: number, content: React.ReactNode): React.ReactElement => (
+    <Text key={key} {...bg} wrap="truncate">
+      <Text color={theme.accent}>│</Text>
+      <Text> </Text>
+      {content}
+      <Text>{" ".repeat(Math.max(0, innerW - 1 - visibleLen))}</Text>
+      <Text color={theme.accent}>│</Text>
+    </Text>
+  );
+
+  // Clip a string to at most `max` display columns (so a row never overruns the
+  // border on narrow terminals — wrap="truncate" would eat the closing │).
+  const clip = (s: string, max: number): string => {
+    if (max <= 0) return "";
+    if (displayWidth(s) <= max) return s;
+    let out = "", w = 0;
+    for (const ch of s) {
+      const cw = displayWidth(ch);
+      if (w + cw > max - 1) break; // leave a column for the ellipsis
+      out += ch; w += cw;
+    }
+    return out + "…";
+  };
+  const avail = innerW - 1; // usable columns after the leading space
+
+  const title = menu.type === "model" ? "Select model" : menu.type === "llm" ? "Select LLM provider" : "Select search provider";
+  const hint = "↑↓ navigate · ⏎ apply · esc close";
+
+  const dialogLines: React.ReactElement[] = [];
+  // Title + hint, dropping/clipping the (secondary) hint when space is tight.
+  const titleC = clip(title, avail);
+  const hintRoom = avail - displayWidth(titleC) - 2;
+  const hintC = hintRoom >= 6 ? clip(hint, hintRoom) : "";
+  dialogLines.push(line("title", displayWidth(titleC) + (hintC ? 2 + displayWidth(hintC) : 0), (
+    <><Text bold color={theme.text}>{titleC}</Text>{hintC ? <Text color={theme.textDim}>{"  " + hintC}</Text> : null}</>
+  )));
+  if (!menu.loading) {
+    const filterC = clip(menu.query || "type to filter…", avail - 2);
+    dialogLines.push(line("filter", 2 + displayWidth(filterC), (
+      <><Text color={theme.accent}>{"⌕ "}</Text>{menu.query ? <Text color={theme.inputText}>{filterC}</Text> : <Text color={theme.textDim}>{filterC}</Text>}</>
+    )));
+    dialogLines.push(line("divider", innerW - 1, <Text color={theme.textDim}>{"─".repeat(Math.max(4, innerW - 1))}</Text>));
+  }
+  if (menu.loading) {
+    dialogLines.push(line("loading", displayWidth("loading models…"), <Text color={theme.textDim}>loading models…</Text>));
+  } else if (menuFiltered.length === 0) {
+    const msg = clip(`no matches for "${menu.query}"`, avail);
+    dialogLines.push(line("empty", displayWidth(msg), <Text color={theme.textDim}>{msg}</Text>));
+  } else {
+    if (menuStart > 0) dialogLines.push(line("up", displayWidth(`↑ ${menuStart} more`), <Text color={theme.textDim}>{`↑ ${menuStart} more`}</Text>));
+    menuFiltered.slice(menuStart, menuStart + DIALOG_ITEMS).forEach((item, i) => {
+      const active = menuStart + i === menu.index;
+      const marker = active ? "❯ " : "  ";
+      const label = clip(displayName(item), avail - displayWidth(marker));
+      const suffixRoom = avail - displayWidth(marker + label);
+      const suffix = menu.type === "llm" && suffixRoom >= 4 ? clip("  " + item, suffixRoom) : "";
+      dialogLines.push(line(item, displayWidth(marker + label) + displayWidth(suffix), (
+        <>
+          <Text color={active ? theme.accent : theme.textDim} bold={active}>{marker + label}</Text>
+          {suffix ? <Text color={theme.textDim}>{suffix}</Text> : null}
+        </>
+      )));
+    });
+    const moreBelow = menuFiltered.length - (menuStart + DIALOG_ITEMS);
+    if (moreBelow > 0) dialogLines.push(line("down", displayWidth(`↓ ${moreBelow} more`), <Text color={theme.textDim}>{`↓ ${moreBelow} more`}</Text>));
+  }
+
   return (
-    <Box
-      position="absolute"
-      marginLeft={dialogLeft}
-      marginTop={dialogTop}
-      width={DIALOG_W}
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={theme.accent}
-      paddingX={1}
-    >
-      <Text bold color={theme.text}>
-        {menu.type === "model" ? "Select model" : menu.type === "llm" ? "Select LLM provider" : "Select search provider"}
-        {"  "}<Text color={theme.textDim}>↑↓ navigate · ⏎ apply · esc close</Text>
-      </Text>
-      {!menu.loading && (
-        <>
-          <Box>
-            <Text color={theme.accent}>{"⌕ "}</Text>
-            <Text color={theme.inputText}>{menu.query}</Text>
-            {!menu.query && <Text color={theme.textDim}>type to filter…</Text>}
-          </Box>
-          <Text color={theme.textDim}>{"─".repeat(Math.max(4, DIALOG_W - 4))}</Text>
-        </>
-      )}
-      {menu.loading ? (
-        <Text color={theme.textDim}>  loading models…</Text>
-      ) : menuFiltered.length === 0 ? (
-        <Text color={theme.textDim}>  no matches for "{menu.query}"</Text>
-      ) : (
-        <>
-          {menuStart > 0 && <Text color={theme.textDim}>  ↑ {menuStart} more</Text>}
-          {menuFiltered.slice(menuStart, menuStart + DIALOG_ITEMS).map((item, i) => {
-            const idx = menuStart + i;
-            const active = idx === menu.index;
-            return (
-              <Text key={item} color={active ? theme.accent : theme.textDim} bold={active} wrap="truncate">
-                {active ? "❯ " : "  "}{displayName(item)}
-                {menu.type === "llm" ? <Text color={theme.textDim}>{"  " + item}</Text> : null}
-              </Text>
-            );
-          })}
-          {menuFiltered.length - (menuStart + DIALOG_ITEMS) > 0 && (
-            <Text color={theme.textDim}>  ↓ {menuFiltered.length - (menuStart + DIALOG_ITEMS)} more</Text>
-          )}
-        </>
-      )}
+    <Box position="absolute" marginLeft={dialogLeft} marginTop={dialogTop} width={DIALOG_W} flexDirection="column">
+      <Text {...bg}><Text color={theme.accent}>{"╭" + "─".repeat(innerW) + "╮"}</Text></Text>
+      {dialogLines}
+      <Text {...bg}><Text color={theme.accent}>{"╰" + "─".repeat(innerW) + "╯"}</Text></Text>
     </Box>
   );
 }
@@ -435,7 +467,7 @@ export function McpDialog({
   hoverMapRef.current = hoverMap;
 
   return (
-    <Box position="absolute" marginLeft={left} marginTop={top} width={W} flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1} paddingY={1}>
+    <Box position="absolute" marginLeft={left} marginTop={top} width={W} flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1} paddingY={1} {...(theme.userBandBackground ? { backgroundColor: theme.userBandBackground } : {})}>
       <Text bold color={theme.text}>
         MCP servers <Text color={theme.textDim}>↑↓ · space toggle · x remove · esc close</Text>
       </Text>

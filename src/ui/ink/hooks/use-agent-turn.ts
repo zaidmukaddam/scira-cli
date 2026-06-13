@@ -1,8 +1,7 @@
 import React, { useCallback, useRef } from "react";
-import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { SciraConfig } from "../../../types/index.js";
-import { createResearchAgent, createOneShotAgent, type AgentOptions } from "../../../agent/research-agent.js";
+import { createResearchAgent, createOneShotAgent, type AgentOptions } from "../../../agent/main-agent.js";
 import { createBackgroundTaskManager, type BackgroundTaskManager } from "../../../tools/background-tasks.js";
 import { resolveProjectRoot } from "../../../tools/workspace.js";
 import { generateWithGateway } from "../../../providers/llm/gateway.js";
@@ -96,9 +95,14 @@ export function useAgentTurn({
             case "reasoning-end":
               sessionFinishReasoning(runPath);
               break;
-            case "tool-call":
-              sessionPushFeed(runPath, { kind: "tool", name: part.toolName, toolCallId: part.toolCallId, summary: summarizeToolInput(part.toolName, part.input), status: "running" });
+            case "tool-call": {
+              // Stash the raw input (capped) so dedicated tool renderers (diffs,
+              // checklists, …) can reconstruct it from the feed.
+              let inputJson: string | undefined;
+              try { inputJson = JSON.stringify(part.input)?.slice(0, 32_000); } catch { inputJson = undefined; }
+              sessionPushFeed(runPath, { kind: "tool", name: part.toolName, toolCallId: part.toolCallId, summary: summarizeToolInput(part.toolName, part.input), status: "running", input: inputJson });
               break;
+            }
             case "tool-result": {
               if (part.preliminary) break;
               const raw = part.output;
@@ -235,7 +239,7 @@ export function useAgentTurn({
           item.kind === "tool" && item.status === "running" ? { ...item, status: "error" as const } : item
         );
       try {
-        await writeFile(
+        await Bun.write(
           join(runPath, "convo.json"),
           JSON.stringify({ feed: snapshot, messages: conversationRef.current, usage: aggregateTurns(turnsRef.current) }, null, 2)
         );

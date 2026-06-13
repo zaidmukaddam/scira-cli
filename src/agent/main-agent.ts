@@ -3,14 +3,22 @@ import { stdin, stdout } from "node:process";
 import { ToolLoopAgent, isLoopFinished, type ToolSet } from "ai";
 import { Spinner } from "picospinner";
 import { SciraConfig } from "../types/index.js";
-import { getLanguageModel, requireLlmKeys } from "../providers/llm/registry.js";
+import { getLanguageModel, requireLlmKeys, isHarnessProvider } from "../providers/llm/registry.js";
+import { createHarnessBundle } from "./harness-agent.js";
 import { createResearchTools, createOneShotTools, createCodingTools, wrapToolsForPlanMode, ApprovalCallback, EscalateCallback, type GetPlanMode } from "../tools/agent-tools.js";
 import { SKILL_CATALOG } from "./skills.js";
 import { createMcpBridge } from "../tools/mcp-bridge.js";
 import { type BackgroundTaskManager, createBackgroundTaskManager } from "../tools/background-tasks.js";
 
-export type AgentBundle<TOOLS extends ToolSet = ToolSet> = {
-  agent: ToolLoopAgent<never, TOOLS>;
+/**
+ * Minimal streaming surface the TUI's `consume()` loop drives — exactly the
+ * `stream` method of `ToolLoopAgent`. The harness chat adapter implements the
+ * same signature, so both kinds of bundle are interchangeable here.
+ */
+export type StreamingChatAgent = Pick<ToolLoopAgent<never, ToolSet>, "stream">;
+
+export type AgentBundle = {
+  agent: StreamingChatAgent;
   close: () => Promise<void>;
 };
 
@@ -154,6 +162,15 @@ export async function createResearchAgent(
   options: AgentOptions = {}
 ): Promise<AgentBundle> {
   requireLlmKeys(config);
+  if (isHarnessProvider(config.llmProvider)) {
+    return createHarnessBundle({
+      runPath,
+      provider: config.llmProvider,
+      config,
+      workspacePath: options.workspacePath ?? process.cwd(),
+      instructions: instructions(goal, config, options)
+    });
+  }
   const bridge = await createMcpBridge(config);
   const getPlanMode = options.getPlanMode ?? (() => options.planMode ?? false);
   const researchTools = createResearchTools(runPath, config, onApprovalRequired, options.workspacePath, getPlanMode);
@@ -228,6 +245,15 @@ export async function createOneShotAgent(
   options: AgentOptions = {}
 ): Promise<AgentBundle> {
   requireLlmKeys(config);
+  if (isHarnessProvider(config.llmProvider)) {
+    return createHarnessBundle({
+      runPath,
+      provider: config.llmProvider,
+      config,
+      workspacePath: options.workspacePath ?? process.cwd(),
+      instructions: oneShotInstructions(goal, false, options)
+    });
+  }
   const bridge = await createMcpBridge(config);
   const getPlanMode = options.getPlanMode ?? (() => options.planMode ?? false);
   const tools = {

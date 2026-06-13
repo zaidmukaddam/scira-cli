@@ -23,6 +23,30 @@ export const ENV_KEY_GUIDES: Record<ManagedEnvKey, EnvKeyGuide> = {
       "Create a key and paste it here (starts with vc_)."
     ]
   },
+  ANTHROPIC_API_KEY: {
+    name: "ANTHROPIC_API_KEY",
+    label: "Anthropic (Claude Code)",
+    signupUrl: "https://console.anthropic.com/",
+    docsUrl: "https://docs.anthropic.com/en/api/overview",
+    placeholder: "sk-ant-...",
+    steps: [
+      "Create an account at console.anthropic.com.",
+      "Open Settings → API Keys → Create Key.",
+      "Paste the key here (starts with sk-ant-). Powers the local Claude Code harness."
+    ]
+  },
+  OPENAI_API_KEY: {
+    name: "OPENAI_API_KEY",
+    label: "OpenAI (Codex)",
+    signupUrl: "https://platform.openai.com/api-keys",
+    docsUrl: "https://platform.openai.com/docs/api-reference",
+    placeholder: "sk-...",
+    steps: [
+      "Create an account at platform.openai.com.",
+      "Open API keys → Create new secret key.",
+      "Paste the key here (starts with sk-). Powers the local Codex harness."
+    ]
+  },
   XAI_API_KEY: {
     name: "XAI_API_KEY",
     label: "xAI (Grok)",

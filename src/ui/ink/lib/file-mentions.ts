@@ -1,5 +1,4 @@
 import { readdirSync, statSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { FILE_MENTION_SKIP, FILE_MENTION_MAX_CHARS } from "../constants.js";
 
@@ -48,7 +47,7 @@ export async function promptWithFileMentions(prompt: string): Promise<{ prompt: 
   for (const file of files) {
     const abs = join(process.cwd(), file);
     try {
-      const content = await readFile(abs, "utf8");
+      const content = await Bun.file(abs).text();
       const body = content.length > FILE_MENTION_MAX_CHARS
         ? `${content.slice(0, FILE_MENTION_MAX_CHARS)}\n...[truncated ${content.length - FILE_MENTION_MAX_CHARS} chars]`
         : content;

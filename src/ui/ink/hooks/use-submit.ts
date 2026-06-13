@@ -1,5 +1,4 @@
 import React, { useCallback, useRef } from "react";
-import { readFile } from "node:fs/promises";
 import { SciraConfig, RunState } from "../../../types/index.js";
 import { createRun, getRunPaths, setRunTitle } from "../../../storage/run-store.js";
 import { readJsonl } from "../../../storage/jsonl.js";
@@ -23,6 +22,7 @@ export type SubmitRefOptions = {
   queuedPromptRef: React.RefObject<string | null>;
   fullModeRef: React.RefObject<boolean>;
   planModeRef: React.RefObject<boolean>;
+  pendingPlanModeRef: React.RefObject<boolean>;
   conversationRef: React.RefObject<{ role: "user" | "assistant"; content: string }[]>;
   feedRef: React.RefObject<FeedItem[]>;
 };
@@ -42,6 +42,7 @@ export type SubmitSetterOptions = {
   setPendingRerun: (pending: boolean) => void;
   setMode: (full: boolean) => void;
   setPlanMode: (active: boolean) => void;
+  setPendingPlanMode: (active: boolean) => void;
   setConfig: (next: SciraConfig) => void;
   setMcpOpen: (open: boolean) => void;
   setHeroHidden: (hidden: boolean) => void;
@@ -70,10 +71,10 @@ export function useSubmit(o: SubmitOptions): {
   stopTurn: () => void;
 } {
   const { config, currentRunPath, sessions, selectedIdx, busy, usage, pendingRerun } = o.state;
-  const { queuedPromptRef, fullModeRef, planModeRef, conversationRef, feedRef } = o.refs;
+  const { queuedPromptRef, fullModeRef, planModeRef, pendingPlanModeRef, conversationRef, feedRef } = o.refs;
   const {
     setApprovalPending, setInputText, setCursorPos, setInputHistory, setHistoryIndex, setHelpOpen,
-    setNotice, setBusy, setScreen, setFeed, setRunState, setPendingRerun, setMode, setPlanMode, setConfig, setMcpOpen,
+    setNotice, setBusy, setScreen, setFeed, setRunState, setPendingRerun, setMode, setPlanMode, setPendingPlanMode, setConfig, setMcpOpen,
     setHeroHidden,
   } = o.setters;
   const { pushFeed, refreshSessions, openRun, openMenu, handleSettings, runTurn, exit } = o.actions;
@@ -95,7 +96,7 @@ export function useSubmit(o: SubmitOptions): {
       if (selected) void openRun(selected.path);
       return;
     }
-    if (text === "q" || text === "/quit" || text === "/q") { exit(); return; }
+    if (text === "/quit" || text === "/q") { exit(); return; }
     if (text === "/help") { setHelpOpen(true); return; }
     if (text === "/back" || text === "/new") { return; }
     if (text === "/home") { setHeroHidden(false); return; }
@@ -108,7 +109,15 @@ export function useSubmit(o: SubmitOptions): {
         setMcpOpen(true);
         return;
       }
-      setNotice("Open a research session first to use /mcp enable/disable/add.");
+      setNotice("Open a session first to use /mcp enable/disable/add.");
+      return;
+    }
+    if (text === "/plan") {
+      const next = !pendingPlanModeRef.current;
+      setPendingPlanMode(next);
+      setNotice(next
+        ? "Plan mode armed — the next run you start will open in plan mode."
+        : "Plan mode disarmed.");
       return;
     }
     if (text.startsWith("/")) {
@@ -160,7 +169,7 @@ export function useSubmit(o: SubmitOptions): {
     if (text === "/model") { void openMenu("model"); return; }
     if (text === "/llm") { void openMenu("llm"); return; }
     if (text === "/provider") { void openMenu("provider"); return; }
-    if (["/key", "/keys", "/llm", "/theme"].includes(text.split(/\s+/u)[0])) {
+    if (["/key", "/keys", "/llm", "/theme", "/thinking", "/reasoning"].includes(text.split(/\s+/u)[0])) {
       void (async () => {
         const result = await handleSettings(text);
         if (result) pushFeed({ kind: "status", text: result });
@@ -170,7 +179,7 @@ export function useSubmit(o: SubmitOptions): {
     if (text === "/report") {
       void (async () => {
         try {
-          const report = await readFile(getRunPaths(currentRunPath).report, "utf8");
+          const report = await Bun.file(getRunPaths(currentRunPath).report).text();
           pushFeed({ kind: "text", text: report });
         } catch {
           pushFeed({ kind: "status", text: "No report.md yet." });
@@ -304,7 +313,7 @@ export function useSubmit(o: SubmitOptions): {
       void (async () => {
         const currentSession = sessions.find(s => s.path === currentRunPath);
         const report = currentSession?.isFull
-          ? await readFile(getRunPaths(currentRunPath).report, "utf8").catch(() => "")
+          ? await Bun.file(getRunPaths(currentRunPath).report).text().catch(() => "")
           : "";
         const lastText = [...feedRef.current].reverse().find((it): it is FeedItem & { kind: "text" } => it.kind === "text")?.text ?? "";
         const content = report.trim() || lastText;

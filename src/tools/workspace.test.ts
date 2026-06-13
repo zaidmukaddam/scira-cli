@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "bun:test";
 import { harnessBasename, isRunArtifactPath, resolveInsideRun, resolveProjectRoot, resolveToolPath } from "./workspace.js";
 
 const RUN = "/tmp/scira-test-run";

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { type FeedItem } from "./types.js";
 import { mergeFeedToolResults } from "./session-manager.js";
 

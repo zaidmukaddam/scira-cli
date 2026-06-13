@@ -1,9 +1,8 @@
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { readFile } from "node:fs/promises";
 import { SciraConfig } from "../../types/index.js";
 import { getRunPaths, summarizeRun, verificationReport } from "../../storage/run-store.js";
-import { runResearchAgent } from "../../agent/research-agent.js";
+import { runResearchAgent } from "../../agent/main-agent.js";
 import { readJsonl } from "../../storage/jsonl.js";
 import { Claim, Source } from "../../types/index.js";
 
@@ -23,7 +22,7 @@ export async function openShell(runPath: string, config: SciraConfig): Promise<v
           console.log(await renderStatus(runPath));
           break;
         case "/plan":
-          console.log(await readFile(getRunPaths(runPath).plan, "utf8"));
+          console.log(await Bun.file(getRunPaths(runPath).plan).text());
           break;
         case "/run":
           await runResearchAgent(runPath, state.goal, config);
@@ -41,10 +40,10 @@ export async function openShell(runPath: string, config: SciraConfig): Promise<v
           console.log(await verificationReport(runPath));
           break;
         case "/report":
-          console.log(await readFile(getRunPaths(runPath).report, "utf8").catch(() => "No report.md yet."));
+          console.log(await Bun.file(getRunPaths(runPath).report).text().catch(() => "No report.md yet."));
           break;
         case "/handoff":
-          console.log(await readFile(getRunPaths(runPath).handoff, "utf8"));
+          console.log(await Bun.file(getRunPaths(runPath).handoff).text());
           break;
         case "/close":
         case "exit":

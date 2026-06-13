@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import * as Bun from "bun";
+import { writeFile, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,16 +12,17 @@ export const pkgVersion = (JSON.parse(
 ) as { version: string }).version;
 
 /** Pipe text to the OS clipboard (pbcopy / clip / xclip). Resolves false when unavailable. */
-export function copyToClipboard(text: string): Promise<boolean> {
-  return new Promise((res) => {
-    const cmd = process.platform === "darwin" ? "pbcopy" : process.platform === "win32" ? "clip" : "xclip";
-    const args = cmd === "xclip" ? ["-selection", "clipboard"] : [];
-    const child = spawn(cmd, args, { stdio: ["pipe", "ignore", "ignore"] });
-    child.on("error", () => res(false));
-    child.on("close", (code) => res(code === 0));
-    child.stdin.write(text);
-    child.stdin.end();
-  });
+export async function copyToClipboard(text: string): Promise<boolean> {
+  const cmd = process.platform === "darwin" ? "pbcopy" : process.platform === "win32" ? "clip" : "xclip";
+  const args = cmd === "xclip" ? ["-selection", "clipboard"] : [];
+  try {
+    const proc = Bun.spawn([cmd, ...args], { stdin: "pipe", stdout: "ignore", stderr: "ignore" });
+    proc.stdin.write(text);
+    await proc.stdin.end();
+    return (await proc.exited) === 0;
+  } catch {
+    return false;
+  }
 }
 
 function historyFile(runDirectory: string): string {
@@ -30,7 +31,7 @@ function historyFile(runDirectory: string): string {
 
 export async function loadInputHistory(runDirectory: string): Promise<string[]> {
   try {
-    const parsed: unknown = JSON.parse(await readFile(historyFile(runDirectory), "utf8"));
+    const parsed: unknown = await Bun.file(historyFile(runDirectory)).json();
     return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string").slice(-50) : [];
   } catch {
     return [];
@@ -41,7 +42,7 @@ export async function saveInputHistory(runDirectory: string, history: string[]):
   try {
     const file = historyFile(runDirectory);
     await mkdir(dirname(file), { recursive: true });
-    await writeFile(file, JSON.stringify(history.slice(-50), null, 2));
+    await Bun.write(file, JSON.stringify(history.slice(-50), null, 2));
   } catch { /* non-fatal */ }
 }
 
@@ -200,15 +201,16 @@ export function linkAtMouseColumn(links: ReadonlyArray<LineLink>, x: number): st
 }
 
 /** Open a URL in the system browser. */
-export function openExternalUrl(url: string): Promise<boolean> {
-  return new Promise((res) => {
-    const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
-    const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
-    const child = spawn(cmd, args, { stdio: "ignore", detached: true });
-    child.on("error", () => res(false));
-    child.on("close", (code) => res(code === 0));
-    child.unref();
-  });
+export async function openExternalUrl(url: string): Promise<boolean> {
+  const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+  try {
+    const proc = Bun.spawn([cmd, ...args], { stdout: "ignore", stderr: "ignore" });
+    proc.unref();
+    return (await proc.exited) === 0;
+  } catch {
+    return false;
+  }
 }
 
 /** True if the prompt clearly asks for full, report-grade research. */
@@ -279,25 +281,44 @@ function toolOutputText(output: unknown): string {
   }
 }
 
-export function summarizeToolInput(name: string, input: unknown): string {
+// Harness/CLI tool names mapped to Scira renderer keys. Kept local to avoid a
+// circular import with tool-result.ts (which imports from this file).
+const HARNESS_TOOL_PREFIX = "mcp__harness-tools__";
+const SUMMARY_CANONICAL: Record<string, string> = {
+  multiWebSearch: "webSearch",
+  Read: "readFile", Write: "writeFile", Edit: "editFile", MultiEdit: "editFile", NotebookEdit: "editFile",
+  Bash: "bash", BashOutput: "bash", shell: "bash",
+  Grep: "grepWorkspace", Glob: "listWorkspaceDir", LS: "listWorkspaceDir",
+  TodoWrite: "todo", WebFetch: "readUrl", WebSearch: "webSearch",
+};
+
+export function summarizeToolInput(rawName: string, input: unknown): string {
+  const stripped = rawName.startsWith(HARNESS_TOOL_PREFIX) ? rawName.slice(HARNESS_TOOL_PREFIX.length) : rawName;
+  const name = SUMMARY_CANONICAL[stripped] ?? stripped;
   const obj = (input ?? {}) as Record<string, unknown>;
+  const path = obj.path ?? obj.file_path ?? obj.notebook_path;
   if (name === "bash" || name === "runBash" || name === "runWorkspaceCommand") {
     const action = obj.action;
     if (action && action !== "run") return `${action}${obj.taskId ? ` ${obj.taskId}` : ""}`;
     return String(obj.command ?? "");
   }
-  if (name === "todo") return `${String(obj.action ?? "list")}${obj.id ? ` ${obj.id}` : ""}`;
+  if (name === "todo") {
+    if (Array.isArray(obj.todos)) return `${(obj.todos as unknown[]).length} item(s)`;
+    return `${String(obj.action ?? "list")}${obj.id ? ` ${obj.id}` : ""}`;
+  }
   if (name === "webSearch" || name === "xSearch") {
     const queries = Array.isArray(obj.queries) ? (obj.queries as string[]) : [];
     return queries.length > 0 ? queries.slice(0, 2).join(" · ") + (queries.length > 2 ? ` +${queries.length - 2}` : "") : String(obj.query ?? "");
   }
   if (name === "readUrl") return String(obj.url ?? "");
   if (name === "writeFile" || name === "editFile" || name === "readFile" || name === "readWorkspaceFile" || name === "writeWorkspaceFile" || name === "editWorkspaceFile") {
-    return String(obj.path ?? "");
+    return String(path ?? "");
   }
-  if (name === "listWorkspaceDir" || name === "grepWorkspace") return String(obj.path ?? obj.pattern ?? "");
-  if (name === "readSkill" || name === "listSkills") return String(obj.name ?? "");
+  if (name === "listWorkspaceDir" || name === "grepWorkspace") return String(obj.pattern ?? path ?? "");
+  if (name === "readSkill" || name === "listSkills") return String(obj.name ?? obj.skill ?? "");
   if (name === "createClaim" || name === "verifyClaim") return String(obj.id ?? "");
+  if (stripped === "ToolSearch") return String(obj.query ?? "");
+  if (stripped === "Task" || stripped === "Agent") return String(obj.description ?? obj.subagent_type ?? "");
   try {
     return JSON.stringify(obj).slice(0, 80);
   } catch {

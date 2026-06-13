@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { SciraConfig, SciraConfigSchema } from "../types/index.js";
@@ -28,20 +28,20 @@ export async function loadConfig(projectRoot = process.cwd()): Promise<SciraConf
 
 export async function saveGlobalConfig(config: SciraConfig): Promise<void> {
   await mkdir(dirname(globalConfigPath), { recursive: true });
-  await writeFile(globalConfigPath, `${JSON.stringify(config, null, 2)}\n`);
+  await Bun.write(globalConfigPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 export async function saveGlobalMcpConfig(config: SciraConfig["mcp"]): Promise<void> {
   const globalConfig = await readConfigFile(globalConfigPath);
   const next = { ...globalConfig, mcp: config };
   await mkdir(dirname(globalConfigPath), { recursive: true });
-  await writeFile(globalConfigPath, `${JSON.stringify(next, null, 2)}\n`);
+  await Bun.write(globalConfigPath, `${JSON.stringify(next, null, 2)}\n`);
 }
 
 export async function saveProjectConfig(config: SciraConfig, projectRoot = process.cwd()): Promise<void> {
   const projectConfigPath = join(projectRoot, ".scira", "config.json");
   await mkdir(dirname(projectConfigPath), { recursive: true });
-  await writeFile(projectConfigPath, `${JSON.stringify(config, null, 2)}\n`);
+  await Bun.write(projectConfigPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 export async function saveProjectMcpConfig(config: SciraConfig["mcp"], projectRoot = process.cwd()): Promise<void> {
@@ -49,16 +49,11 @@ export async function saveProjectMcpConfig(config: SciraConfig["mcp"], projectRo
   const projectConfig = await readConfigFile(projectConfigPath);
   const next = { ...projectConfig, mcp: config };
   await mkdir(dirname(projectConfigPath), { recursive: true });
-  await writeFile(projectConfigPath, `${JSON.stringify(next, null, 2)}\n`);
+  await Bun.write(projectConfigPath, `${JSON.stringify(next, null, 2)}\n`);
 }
 
 async function readConfigFile(path: string): Promise<Record<string, unknown>> {
-  try {
-    return JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return {};
-    }
-    throw error;
-  }
+  const file = Bun.file(path);
+  if (!(await file.exists())) return {};
+  return (await file.json()) as Record<string, unknown>;
 }

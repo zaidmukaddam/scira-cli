@@ -1,6 +1,6 @@
 import { generateText, gateway } from "ai";
 import { SciraConfig } from "../../types/index.js";
-import { getLanguageModel, requireLlmKeys, defaultModelFor } from "./registry.js";
+import { getLanguageModel, requireLlmKeys, defaultModelFor, isHarnessProvider } from "./registry.js";
 
 export type GatewayModel = {
   id: string;
@@ -69,8 +69,11 @@ export async function chooseConfiguredModel(config: SciraConfig): Promise<string
 }
 
 export async function generateWithGateway(config: SciraConfig, prompt: string, system?: string): Promise<string> {
+  // Harness providers aren't language models; use the AI Gateway directly for
+  // these utility generations (e.g. run titles) when a gateway key is present.
+  const model = isHarnessProvider(config.llmProvider) ? gateway(DEFAULT_MODEL) : getLanguageModel(config);
   const result = await generateText({
-    model: getLanguageModel(config),
+    model,
     system,
     prompt
   });

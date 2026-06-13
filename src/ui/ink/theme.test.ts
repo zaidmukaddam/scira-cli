@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, jest } from "bun:test";
 import {
   detectTerminalTheme,
   getTheme,
@@ -70,15 +70,15 @@ describe("detectTerminalTheme", () => {
   });
 
   it("watchAutoThemeChanges fires immediately and on interval", () => {
-    vi.useFakeTimers();
-    const onChange = vi.fn();
+    jest.useFakeTimers();
+    const onChange = jest.fn();
     const stop = watchAutoThemeChanges(onChange);
     expect(onChange).toHaveBeenCalledTimes(1);
-    vi.advanceTimersByTime(1500);
+    jest.advanceTimersByTime(1500);
     expect(onChange).toHaveBeenCalledTimes(2);
     stop();
-    vi.advanceTimersByTime(1500);
+    jest.advanceTimersByTime(1500);
     expect(onChange).toHaveBeenCalledTimes(2);
-    vi.useRealTimers();
+    jest.useRealTimers();
   });
 });

@@ -4,7 +4,7 @@ export type FeedItem =
   | { kind: "user"; text: string; ts?: number }
   | { kind: "text"; text: string }
   | { kind: "reasoning"; text: string; startedAt?: number; durationMs?: number }
-  | { kind: "tool"; name: string; toolCallId?: string; summary: string; status: "running" | "done" | "error"; result?: string }
+  | { kind: "tool"; name: string; toolCallId?: string; summary: string; status: "running" | "done" | "error"; result?: string; input?: string }
   | { kind: "status"; text: string };
 
 export type ModelUsage = { input: number; output: number; total: number; turns: number };

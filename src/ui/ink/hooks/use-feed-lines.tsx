@@ -9,9 +9,29 @@ import type { LineLink } from "../lib/utils.js";
 import type { MdSeg } from "../lib/markdown.js";
 import {
   formatToolResultLines, formatToolResultPreview, feedToolItemId,
-  isCollapsibleToolName, isToolItemCollapsed,
+  isCollapsibleToolName, isToolItemCollapsed, canonicalToolName, displayToolName,
 } from "../lib/tool-result.js";
 import { markdownToSegLines } from "../lib/markdown.js";
+
+// Formatting a tool body (wrapping/parsing the result) is the expensive part of
+// building feed lines. The feed re-renders on every spinner/reasoning tick
+// (~20fps while busy), so without caching a large result would be re-parsed
+// dozens of times a second. Cache by content identity; completed items hit the
+// cache and only the live item (whose result is still growing) recomputes.
+const toolBodyCache = new Map<string, MdSeg[][]>();
+function cachedToolBody(
+  themeKey: string, name: string, callId: string, summary: string,
+  result: string | undefined, status: "running" | "done" | "error",
+  width: number, theme: Parameters<typeof formatToolResultLines>[5], expanded: boolean, input?: string,
+): MdSeg[][] {
+  const key = `${themeKey}|${callId}|${name}|${status}|${width}|${expanded}|${result?.length ?? 0}|${input?.length ?? 0}`;
+  const hit = toolBodyCache.get(key);
+  if (hit) return hit;
+  const v = formatToolResultLines(name, summary, result, status, width, theme, expanded, input);
+  toolBodyCache.set(key, v);
+  if (toolBodyCache.size > 400) toolBodyCache.delete(toolBodyCache.keys().next().value as string);
+  return v;
+}
 import { useTheme } from "./use-theme.js";
 import type { ThemeColors } from "../theme.js";
 
@@ -197,19 +217,28 @@ export function useFeedLines(
         const running = fi.status === "running";
         const failed = fi.status === "error";
         const itemId = feedToolItemId(feedIdx, fi.toolCallId);
-        const collapsible = isCollapsibleToolName(fi.name) && !running;
-        const collapsed = collapsible && isToolItemCollapsed(itemId, fi.name, fi.status, itemExpandState);
+        // Route rendering through the Scira-canonical name (Claude/Codex builtins
+        // and `mcp__harness-tools__*` host tools map onto our renderers), but show
+        // the cleaned real name in the header.
+        const canon = canonicalToolName(fi.name);
+        const shownName = displayToolName(fi.name);
+        const collapsible = isCollapsibleToolName(canon) && !running;
+        const collapsed = collapsible && isToolItemCollapsed(itemId, canon, fi.status, itemExpandState);
         const headerLineIdx = lines.length;
         const hovered = hoveredLineIdx === headerLineIdx;
         const toolIcon = running
           ? SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]
-          : TOOL_ICONS[fi.name] ?? "·";
+          : TOOL_ICONS[canon] ?? "·";
         const symColor = failed ? theme.error : theme.accentDim;
         const nameColor = running ? theme.text : failed ? theme.error : theme.textDim;
         const panelWidth = innerWidth - 4;
+        // Pass the raw name so dedicated built-in renderers (Edit diff, TodoWrite
+        // checklist, …) can key off it; the formatters canonicalize internally
+        // for the generic path.
         const preview = formatToolResultPreview(fi.name, fi.summary, fi.result, fi.status);
-        const bodyLines = formatToolResultLines(
-          fi.name, fi.summary, fi.result, fi.status, panelWidth, theme, !collapsed,
+        const bodyLines = cachedToolBody(
+          theme.accent, fi.name, fi.toolCallId ?? String(feedIdx), fi.summary,
+          fi.result, fi.status, panelWidth, theme, !collapsed, fi.input,
         );
 
         if (collapsible) toggleAtLine.set(headerLineIdx, itemId);
@@ -222,7 +251,7 @@ export function useFeedLines(
               </Text>
             ) : null}
             <Text color={symColor} bold={running}>{toolIcon}</Text>
-            <Text color={nameColor} bold={running || failed || hovered}> {fi.name}</Text>
+            <Text color={nameColor} bold={running || failed || hovered}> {shownName}</Text>
             {failed ? <Text color={theme.error}> failed</Text> : null}
             {running ? <Text color={theme.textDim}> …</Text> : null}
             {!running && !failed && collapsed && preview ? (
