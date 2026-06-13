@@ -245,8 +245,14 @@ function formatListSkills(result: string, width: number, theme: ThemeColors): Md
 }
 
 function formatShellOutput(result: string, width: number, theme: ThemeColors): MdSeg[][] {
-  if (!result.trim()) return [[seg("(no output)", { dim: true, color: theme.textDim })]];
-  return result.split("\n").flatMap((line) => plainLines(line, width, { color: theme.textDim }));
+  // Codex returns `{ exitCode, output }`; Claude returns the output string directly.
+  let text = result;
+  const obj = parseObj(result);
+  if (obj && typeof obj.output === "string") {
+    text = typeof obj.exitCode === "number" && obj.exitCode !== 0 ? `[exit ${obj.exitCode}]\n${obj.output}` : obj.output;
+  }
+  if (!text.trim()) return [[seg("(no output)", { dim: true, color: theme.textDim })]];
+  return text.split("\n").flatMap((line) => plainLines(line, width, { color: theme.textDim }));
 }
 
 function formatFileContent(result: string, width: number, theme: ThemeColors): MdSeg[][] {
@@ -547,9 +553,19 @@ function formatBuiltinBody(real: string, rawInput: string | undefined, result: s
       return formatSubagentBody(input, result, width, theme);
     case "ToolSearch":
       return formatToolSearchBody(input, result, width, theme);
+    case "fileChange":
+      return formatFileChangeBody(input ?? parseObj(result), theme);
     default:
       return null;
   }
+}
+
+/** Codex/Claude file mutation event → a single colored "<event>  <path>" line. */
+function formatFileChangeBody(fc: Record<string, unknown> | null, theme: ThemeColors): MdSeg[][] | null {
+  if (!fc) return null;
+  const event = String(fc.event ?? "change");
+  const color = event === "delete" ? theme.error : event === "create" ? theme.success : theme.accent;
+  return [[seg(`${event}  `, { color }), seg(String(fc.path ?? ""), { color: theme.text })]];
 }
 
 /** Multi-line formatted tool output for the feed panel. */

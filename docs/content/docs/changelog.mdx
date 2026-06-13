@@ -9,6 +9,24 @@ Every release of Scira. Versions follow semantic versioning and publish to npm a
 
 <Step>
 
+### 0.1.7 — June 13, 2026
+
+**Updates & harness polish**
+
+- **Update notifications** — Scira now checks npm for a newer release (at most once a day, cached). The TUI shows it as an inline notice on open; CLI commands print a one-line reminder when they finish (and never both at once). The check is skipped for `--version`/`--help` so those stay instant, and a transient network failure no longer discards an update it had already found.
+- **Friendlier missing-file handling** — `scira export <run> --format md` and the shell `/plan` command now degrade gracefully when a run hasn't produced `report.md` / `plan.md` yet (common on fresh local-harness runs), instead of erroring out.
+- **Codex tool rendering** — Codex's `bash` output (returned as `{exitCode, output}`) and its `fileChange` events now render cleanly in the timeline instead of as raw JSON, matching the Claude Code treatment.
+- **Harness writes land in the run directory** — research runs on the local Claude Code / Codex providers now write `report.md`, `sources.jsonl`, etc. into the correct run folder (the run's artifacts are no longer pre-seeded, which had blocked the CLI's "read before write" rule).
+- **Models get the run path** — agent instructions now tell the model the run's absolute directory, and the file tools accept that path (or any path inside the run) in addition to bare filenames. Models that aren't happy with bare names — e.g. gateway-routed ones — no longer fail by guessing a `.scira/runs/latest/…` path.
+- **Skills in the harness** — Scira's built-in research skills are now passed to the Claude Code / Codex runtimes natively.
+- **`/help` redesigned** — leads with keyboard shortcuts (scroll, quit, autocomplete, group toggles) and a grouped command map, sized to fit; it now also opens from the home screen.
+- **xAI model list** — the `/model` picker for xAI now lists only text models (via `/v1/language-models`), dropping image/video/embedding models.
+- **Faster quit** — `Ctrl+C`-twice / `Ctrl+D` no longer leave a timer holding the process open; the TUI exits promptly.
+
+</Step>
+
+<Step>
+
 ### 0.1.6 — June 13, 2026
 
 **Local agent runtimes — Claude Code & Codex**

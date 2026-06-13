@@ -47,14 +47,15 @@ async function listXaiModels(): Promise<LlmModel[]> {
   const key = process.env.XAI_API_KEY;
   if (!key) return STATIC_MODELS.xai;
   try {
-    // OpenAI-compatible models endpoint
-    const response = await fetch("https://api.x.ai/v1/models", {
+    // The language-models endpoint returns only text/chat models (it excludes
+    // the image/video/embedding models that /v1/models lists).
+    const response = await fetch("https://api.x.ai/v1/language-models", {
       headers: { Authorization: `Bearer ${key}` },
       signal: AbortSignal.timeout(15000)
     });
-    if (!response.ok) throw new Error(`xAI models endpoint returned ${response.status}`);
-    const payload = await response.json() as { data?: { id: string }[] };
-    const models = (payload.data ?? []).map((m): LlmModel => ({ id: m.id }));
+    if (!response.ok) throw new Error(`xAI language-models endpoint returned ${response.status}`);
+    const payload = await response.json() as { models?: { id: string }[]; data?: { id: string }[] };
+    const models = (payload.models ?? payload.data ?? []).map((m): LlmModel => ({ id: m.id }));
     return models.length > 0 ? models : STATIC_MODELS.xai;
   } catch {
     return STATIC_MODELS.xai;

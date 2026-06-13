@@ -22,7 +22,7 @@ export async function openShell(runPath: string, config: SciraConfig): Promise<v
           console.log(await renderStatus(runPath));
           break;
         case "/plan":
-          console.log(await Bun.file(getRunPaths(runPath).plan).text());
+          console.log(await Bun.file(getRunPaths(runPath).plan).text().catch(() => "No plan.md yet."));
           break;
         case "/run":
           await runResearchAgent(runPath, state.goal, config);

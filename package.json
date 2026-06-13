@@ -1,6 +1,6 @@
 {
   "name": "@scira/cli",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Scira — terminal-native AI research agent with grounded sources, verified claims, and local run storage.",
   "license": "MIT",
   "type": "module",

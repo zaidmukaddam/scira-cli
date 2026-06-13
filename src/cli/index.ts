@@ -37,6 +37,18 @@ import { createMcpBridge } from "../tools/mcp-bridge.js";
 import { saveGlobalMcpConfig } from "../config/load-config.js";
 import { runOAuthFlow } from "../tools/mcp-oauth.js";
 import { initCommand } from "./commands/init.js";
+import { checkForUpdate, formatUpdateNotice } from "../utils/update-check.js";
+
+// Once per invocation (throttled to a real npm check at most daily): surface an
+// available update. The TUI shows it as an in-app notice; CLI commands print it.
+// Skip for --version/--help so those stay instant (the daily check can spend up
+// to ~3s on the network, and sade prints+exits for these before any command).
+const argv = process.argv.slice(2);
+const wantsUpdateCheck = !argv.some((a) => ["-v", "--version", "-h", "--help"].includes(a));
+const update = wantsUpdateCheck ? await checkForUpdate(pkgVersion) : null;
+const updateNotice = update ? formatUpdateNotice(update) : undefined;
+// The TUI renders the notice in-app, so the finally banner would double it up.
+let noticeShownInApp = false;
 
 const prog = sade("scira");
 
@@ -51,7 +63,8 @@ prog
     const question = opts._.length > 0 ? opts._.join(" ") : undefined;
     const config = await loadConfig();
     if (!question) {
-      await openTuiHome(config);
+      noticeShownInApp = !!updateNotice;
+      await openTuiHome(config, updateNotice);
       return;
     }
     requireLlmKeys(config);
@@ -78,7 +91,8 @@ prog
     const config = await loadConfig();
     const run = await createRun(question, config);
     if (opts.tui) {
-      await openTui(run.path, config);
+      noticeShownInApp = !!updateNotice;
+      await openTui(run.path, config, updateNotice);
     } else if (opts.shell) {
       await openShell(run.path, config);
     } else {
@@ -97,7 +111,8 @@ prog
     if (opts.shell) {
       await openShell(runPath, config);
     } else {
-      await openTui(runPath, config);
+      noticeShownInApp = !!updateNotice;
+      await openTui(runPath, config, updateNotice);
     }
   });
 
@@ -147,7 +162,7 @@ prog
     const runPath = await findRun(runId, config);
     let output: string;
     if (fmt === "md") {
-      output = await Bun.file(`${runPath}/report.md`).text();
+      output = await Bun.file(`${runPath}/report.md`).text().catch(() => "");
     } else {
       const { toJson, toCsv } = await import("../export/formatters.js");
       const paths = getRunPaths(runPath);
@@ -512,4 +527,8 @@ try {
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
+} finally {
+  // Reminder after a CLI command finishes. Skipped when the TUI already
+  // rendered the notice in-app, so we don't show it twice.
+  if (updateNotice && !noticeShownInApp) process.stderr.write(`\n\x1b[2m${updateNotice}\x1b[0m\n`);
 }

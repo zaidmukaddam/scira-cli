@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { SciraConfig, RunState, Source, Claim } from "../types/index.js";
 import { createRunId } from "../utils/ids.js";
 import { appendJsonl, readJsonl } from "./jsonl.js";
+import { isHarnessProvider } from "../providers/llm/registry.js";
 
 export type RunPaths = {
   root: string;
@@ -47,15 +48,21 @@ export async function createRun(goal: string, config: SciraConfig, projectRoot =
   await mkdir(paths.artifacts, { recursive: true });
   await mkdir(paths.snapshots, { recursive: true });
   await Bun.write(paths.goal, `# Goal\n\n${goal}\n`);
-  await Bun.write(paths.plan, "# Research Plan\n\nPending plan generation.\n");
   await Bun.write(paths.research, researchInstructions());
   await Bun.write(paths.scope, `${JSON.stringify({ goal, maxSources: config.maxSources, citationPolicy: config.citationPolicy }, null, 2)}\n`);
   await Bun.write(paths.progress, progressText("created", "Generate and approve research plan."));
-  await Bun.write(paths.sources, "");
-  await Bun.write(paths.claims, "");
-  await Bun.write(paths.notes, "# Notes\n\n");
-  await Bun.write(paths.report, "# Report\n\nDraft not generated yet.\n");
   await Bun.write(paths.handoff, handoffText(goal, "created"));
+  // The local-harness providers (claude-code / codex) run their own CLI, whose
+  // Write tool refuses to overwrite a file it hasn't Read first. Pre-seeding the
+  // agent-written artifacts would block it, so leave those for the agent to
+  // create fresh. summarizeRun tolerates the missing files.
+  if (!isHarnessProvider(config.llmProvider)) {
+    await Bun.write(paths.plan, "# Research Plan\n\nPending plan generation.\n");
+    await Bun.write(paths.sources, "");
+    await Bun.write(paths.claims, "");
+    await Bun.write(paths.notes, "# Notes\n\n");
+    await Bun.write(paths.report, "# Report\n\nDraft not generated yet.\n");
+  }
   await logEvent(paths.root, "run.created", { goal });
   return summarizeRun(paths.root);
 }

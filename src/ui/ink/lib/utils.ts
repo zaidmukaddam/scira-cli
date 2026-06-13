@@ -317,6 +317,7 @@ export function summarizeToolInput(rawName: string, input: unknown): string {
   if (name === "listWorkspaceDir" || name === "grepWorkspace") return String(obj.pattern ?? path ?? "");
   if (name === "readSkill" || name === "listSkills") return String(obj.name ?? obj.skill ?? "");
   if (name === "createClaim" || name === "verifyClaim") return String(obj.id ?? "");
+  if (name === "fileChange") return `${String(obj.event ?? "change")} ${String(obj.path ?? "")}`.trim();
   if (stripped === "ToolSearch") return String(obj.query ?? "");
   if (stripped === "Task" || stripped === "Agent") return String(obj.description ?? obj.subagent_type ?? "");
   try {

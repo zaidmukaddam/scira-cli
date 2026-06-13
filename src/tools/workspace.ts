@@ -60,6 +60,14 @@ export type ResolvedToolPath = {
   scope: "run" | "workspace";
 };
 
+/** Absolute form of `candidate` if it lands inside the run directory, else null. */
+function absInsideRun(runPath: string, workspacePath: string | undefined, raw: string): string | null {
+  if (!isAbsolute(raw) && !workspacePath) return null; // can't resolve a relative path without a root
+  const abs = isAbsolute(raw) ? resolve(raw) : resolve(workspacePath!, raw);
+  const rel = relative(resolve(runPath), abs);
+  return !rel.startsWith("..") && !isAbsolute(rel) ? abs : null;
+}
+
 export function resolveToolPath(
   runPath: string,
   workspacePath: string | undefined,
@@ -70,6 +78,14 @@ export function resolveToolPath(
     const inner = raw.slice(4);
     const abs = resolveInsideRun(runPath, inner);
     return { abs, displayPath: inner, scope: "run" };
+  }
+
+  // A full/absolute path that points into the run directory routes to the run —
+  // so the model can use the run dir path we hand it, not only bare names.
+  const runAbs = absInsideRun(runPath, workspacePath, raw);
+  if (runAbs) {
+    const display = relative(resolve(runPath), runAbs) || ".";
+    return { abs: runAbs, displayPath: display, scope: "run" };
   }
 
   if (workspacePath && !isRunArtifactPath(raw)) {

@@ -8,6 +8,23 @@ export const PROVIDERS: SearchProvider[] = ["parallel", "exa", "firecrawl"];
 
 export const CHAT_COMMANDS = ["/help", "/home", "/new", "/plan", "/rerun", "/report", "/sources", "/claims", "/why", "/mcp", "/copy", "/usage", "/rename", "/model", "/llm", "/provider", "/thinking", "/reasoning", "/theme", "/links", "/key", "/keys", "/stop", "/back", "/quit"];
 
+/** Commands grouped by purpose, for the /help reference. */
+export const COMMAND_GROUPS: { label: string; commands: string[] }[] = [
+  { label: "Model", commands: ["/llm", "/model", "/provider", "/plan", "/thinking", "/reasoning"] },
+  { label: "Session", commands: ["/new", "/rerun", "/rename", "/report", "/sources", "/claims", "/why", "/copy", "/usage"] },
+  { label: "Setup", commands: ["/key", "/keys", "/mcp", "/theme", "/links"] },
+  { label: "Go", commands: ["/home", "/back", "/stop", "/quit"] },
+];
+
+/** Keyboard shortcuts shown in /help (not discoverable via the `/` autocomplete). */
+export const KEY_HINTS: { keys: string; action: string }[] = [
+  { keys: "↑↓ jk u/d pgup/dn", action: "scroll" },
+  { keys: "^C ^C / ^D", action: "quit" },
+  { keys: "esc", action: "clear input / close" },
+  { keys: "/ @ #", action: "commands · files · sessions" },
+  { keys: "[ ] C", action: "navigate / toggle tool groups" },
+];
+
 /** Slash commands that take an argument; ⏎ from the menu appends a space instead of running. */
 export const COMMANDS_NEEDING_ARGS = new Set(["/theme", "/key", "/rename", "/why", "/links"]);
 export const COMMAND_DESCRIPTIONS: Record<string, string> = {
@@ -48,6 +65,7 @@ export const TOOL_ICONS: Record<string, string> = {
   verifyClaim: "✓",
   webSearch: "⌕",
   multiWebSearch: "⌕",
+  fileChange: "✎",
   readUrl: "↗",
   listSkills: "★",
   readSkill: "★",

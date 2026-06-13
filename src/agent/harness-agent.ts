@@ -8,6 +8,11 @@ import { SciraConfig } from "../types/index.js";
 import { type HarnessProvider } from "../providers/llm/registry.js";
 import { createLocalSandbox } from "../providers/harness/local-sandbox.js";
 import { createResearchTools } from "../tools/agent-tools.js";
+import { SKILLS } from "./skills.js";
+
+// Scira's built-in skills surfaced to the harness runtime (the adapter
+// materializes them natively — e.g. Claude Code writes them as SKILL.md files).
+const HARNESS_SKILLS = SKILLS.map((s) => ({ name: s.name, description: s.summary, content: s.content }));
 
 /** Resolve a promise but never hang the caller longer than `ms`. Clears the timer when settled so it can't keep the event loop alive (e.g. delaying quit). */
 function withTimeout<T>(p: PromiseLike<T>, ms: number): Promise<T | undefined> {
@@ -57,8 +62,14 @@ function buildAgent(provider: HarnessProvider, config: SciraConfig, workspacePat
   // Cast bridges the project's `ai` Tool type to the harness's bundled-`ai`
   // ToolSet (same runtime shape, different package versions).
   const tools = { multiWebSearch: webSearch, readUrl } as unknown as Record<string, never>;
+  // The harness CLI writes relative to its own working directory and has no
+  // knowledge of Scira's run layout, so pin the exact run directory and require
+  // absolute paths for artifacts — otherwise it guesses (e.g. ~/.scira/runs/).
+  const runDir = path.resolve(runPath);
+  const runDirSteer = `\n\nRUN DIRECTORY: Write every run artifact — plan.md, notes.md, sources.jsonl, claims.jsonl, report.md — to this exact absolute path, nowhere else:\n  ${runDir}\nFor example, the report goes to ${runDir}/report.md. Always use the absolute path; do not use a bare "sources.jsonl" or a ".scira/runs/…" path. If a file already exists, Read it before writing (your Write tool requires that) — or edit it in place.`;
   // Positive, authoritative steering pointing at the unique tool name.
-  const fullInstructions = `${instructions}\n\nWEB ACCESS: For any web search use the \`multiWebSearch\` tool and pass 3-5 query variations in a single call (it searches them in parallel). Use \`readUrl\` to read a specific page. These are your only web tools.`;
+  const webSteer = `\n\nWEB ACCESS: For any web search use the \`multiWebSearch\` tool and pass 3-5 query variations in a single call (it searches them in parallel). Use \`readUrl\` to read a specific page. These are your only web tools.`;
+  const fullInstructions = `${instructions}${runDirSteer}${webSteer}`;
   // No `auth`: the bundled CLI authenticates with the user's local login
   // (`claude login` → ~/.claude, `codex login` → ~/.codex). We never pass an
   // API key, so a Pro/Max/ChatGPT subscription session is used as-is.
@@ -74,7 +85,7 @@ function buildAgent(provider: HarnessProvider, config: SciraConfig, workspacePat
         // Built-in harness web search is always disabled.
         webSearch: false
       });
-  return new HarnessAgent({ harness, sandbox, permissionMode, instructions: fullInstructions, tools });
+  return new HarnessAgent({ harness, sandbox, permissionMode, instructions: fullInstructions, tools, skills: HARNESS_SKILLS });
 }
 
 type SessionEntry = { agent: HarnessAgent; session: HarnessAgentSession; provider: HarnessProvider; fingerprint: string };

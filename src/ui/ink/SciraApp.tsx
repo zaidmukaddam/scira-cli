@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import { Box, Text, useApp, useStdout, useStdin } from "ink";
 import { SciraConfig, RunState } from "../../types/index.js";
 import { type Screen, type ModelUsage, type TurnUsage, type ApprovalPending, type LinkPending } from "./types.js";
-import { CHAT_COMMANDS, MENU_VISIBLE, SPINNER_FRAMES, LOADING_PHRASES } from "./constants.js";
+import { CHAT_COMMANDS, COMMAND_GROUPS, KEY_HINTS, MENU_VISIBLE, SPINNER_FRAMES, LOADING_PHRASES } from "./constants.js";
 import { CWD_DISPLAY, wrapText, wrapInputWithCursor, loadInputHistory, saveInputHistory, linkAtMouseColumn, openExternalUrl } from "./lib/utils.js";
 import { deleteRun } from "../../storage/run-store.js";
 import { saveGlobalConfig } from "../../config/load-config.js";
@@ -25,9 +25,10 @@ import { ThemeProvider, useTheme } from "./hooks/use-theme.js";
 export type SciraAppProps = {
   runPath?: string;
   config: SciraConfig;
+  updateNotice?: string;
 };
 
-export function SciraApp({ runPath: initialRunPath, config: initialConfig }: SciraAppProps): React.ReactElement {
+export function SciraApp({ runPath: initialRunPath, config: initialConfig, updateNotice }: SciraAppProps): React.ReactElement {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const { stdin } = useStdin();
@@ -45,7 +46,7 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
   const [screen, setScreen] = useState<Screen>(initialRunPath ? "chat" : "home");
   const [currentRunPath, setCurrentRunPath] = useState<string | undefined>(initialRunPath);
   const [config, setConfig] = useState<SciraConfig>(initialConfig);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(updateNotice ?? "");
   const [pendingRerun, setPendingRerun] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
   const [mcpRowIdx, setMcpRowIdx] = useState(0);
@@ -369,7 +370,7 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
     showCursor ? caret : -1,
   );
   const commandMenuHeight = activeSuggestions.length > 0 ? Math.min(MENU_VISIBLE, activeSuggestions.length) + 3 : 0;
-  const helpHeight = helpOpen ? Math.min(14, CHAT_COMMANDS.length + 4) : 0;
+  const helpHeight = helpOpen ? KEY_HINTS.length + COMMAND_GROUPS.length + 7 : 0;
   const approvalPreviewLines = approvalPending
     ? Math.min(5, wrapText(approvalPending.description, Math.max(10, innerWidth - 4)).length)
     : 0;
@@ -508,7 +509,7 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
           heroHidden={heroHidden}
           notice={notice}
           tipIndex={tipIndex}
-          commandMenuHeight={commandMenuHeight}
+          commandMenuHeight={commandMenuHeight + helpHeight}
           mcpOpen={mcpOpen}
           sessionsModalOpen={sessionsModalOpen}
           sessionsModalIdx={sessionsModalIdx}
@@ -527,6 +528,7 @@ export function SciraApp({ runPath: initialRunPath, config: initialConfig }: Sci
         />
         <Box flexDirection="column" paddingBottom={1}>
           <CommandMenuBox activeSuggestions={activeSuggestions} activeSuggestionKind={activeSuggestionKind} commandMenuIndex={commandMenuIndex} innerWidth={innerWidth} sessions={sessions} config={config} />
+          <HelpBox open={helpOpen} innerWidth={innerWidth} config={config} />
           <InputBar inputLines={inputLines} cursorLine={cursorLine} cursorCol={cursorCol} showCursor={showCursor} approvalPending={inputBlocked} busy={busy} frame={frame} boxWidth={boxWidth} modelName={modelName} planMode={planMode} config={config} />
           <HintLine screen={screen} busy={busy} modeLabel={pendingPlanMode ? "PLAN MODE" : ""} modeColor="cyan" config={config} />
         </Box>

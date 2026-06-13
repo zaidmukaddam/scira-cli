@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { RunState, SciraConfig } from "../../../types/index.js";
-import { SPINNER_FRAMES, CHAT_COMMANDS, COMMAND_DESCRIPTIONS, MENU_VISIBLE } from "../constants.js";
+import { SPINNER_FRAMES, CHAT_COMMANDS, COMMAND_DESCRIPTIONS, COMMAND_GROUPS, KEY_HINTS, MENU_VISIBLE } from "../constants.js";
 import { fmtTokens, wrapText, displayWidth } from "../lib/utils.js";
 import { LLM_PROVIDER_LABELS } from "../../../providers/llm/registry.js";
 import { type ModelUsage } from "../types.js";
@@ -232,17 +232,26 @@ export function CommandMenuBox({ activeSuggestions, activeSuggestionKind, comman
 export function HelpBox({ open, innerWidth, config }: { open: boolean; innerWidth: number; config: SciraConfig }): React.ReactElement | null {
   const theme = useTheme();
   if (!open) return null;
+  const rule = "─".repeat(Math.max(10, innerWidth - 6));
+  const keyW = Math.max(...KEY_HINTS.map((h) => h.keys.length));
+  const labelW = Math.max(...COMMAND_GROUPS.map((g) => g.label.length));
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={theme.border} paddingX={1}>
-      <Text bold color={theme.text}>help <Text color={theme.textDim}>esc close</Text></Text>
-      <Text color={theme.textDim}>{"─".repeat(Math.max(10, innerWidth - 6))}</Text>
-      <Text color={theme.textDim}>scroll  ↑/↓  k/j  u/d  pgup/pgdn</Text>
-      <Text color={theme.textDim}>autocomplete  / commands · @ files · # sessions</Text>
-      <Text color={theme.textDim}>{"─".repeat(Math.max(10, innerWidth - 6))}</Text>
-      {CHAT_COMMANDS.map((cmd) => (
-        <Box key={cmd} gap={2}>
-          <Text color={theme.accent}>{cmd}</Text>
-          <Text color={theme.textDim}>{COMMAND_DESCRIPTIONS[cmd]}</Text>
+      <Text bold color={theme.text}>help <Text color={theme.textDim}>· esc to close · type / to search a command</Text></Text>
+      <Text color={theme.textDim}>{rule}</Text>
+      <Text bold color={theme.textDim}>keys</Text>
+      {KEY_HINTS.map((h) => (
+        <Box key={h.keys} gap={2}>
+          <Text color={theme.accent}>{h.keys.padEnd(keyW)}</Text>
+          <Text color={theme.textDim}>{h.action}</Text>
+        </Box>
+      ))}
+      <Text color={theme.textDim}>{rule}</Text>
+      <Text bold color={theme.textDim}>commands</Text>
+      {COMMAND_GROUPS.map((g) => (
+        <Box key={g.label} gap={2}>
+          <Text color={theme.textDim}>{g.label.padEnd(labelW)}</Text>
+          <Text color={theme.accent} wrap="truncate">{g.commands.join("  ")}</Text>
         </Box>
       ))}
     </Box>

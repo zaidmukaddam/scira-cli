@@ -49,7 +49,7 @@ You are in plan mode. Explore and plan before making changes.
 - When the plan is ready, summarize it and tell the user to type /plan to exit plan mode and begin execution`;
 }
 
-function instructions(goal: string, config: SciraConfig, options: AgentOptions = {}): string {
+function instructions(goal: string, config: SciraConfig, options: AgentOptions = {}, runPath?: string): string {
   const { workspacePath } = options;
   const planMode = resolvePlanMode(options);
   const now = new Date();
@@ -67,12 +67,13 @@ function instructions(goal: string, config: SciraConfig, options: AgentOptions =
 
 PROJECT LAYOUT:
 - Project root (codebase): ${workspacePath}
-- Run harness (.scira/runs/…): plan.md, notes.md, report.md, sources.jsonl, claims.jsonl, todos.json
+- This run's directory: ${runPath ?? "(the active run)"}  ← artifacts live here
+- Run artifacts: plan.md, notes.md, report.md, sources.jsonl, claims.jsonl, todos.json — pass the bare filename (e.g. \`report.md\`) or the absolute path above. Don't guess a \`.scira/runs/…\` path.
 
 FILE TOOLS:
 - readFile / writeFile / editFile route automatically:
-  - Harness files by bare name: plan.md, notes.md, report.md, sources.jsonl → stored under .scira/runs/
-  - Everything else (src/…, package.json, …) → project root
+  - Harness files (plan.md, notes.md, report.md, sources.jsonl, claims.jsonl): pass the BARE filename only — e.g. \`plan.md\`. The tool puts it in this run's directory for you. Never prefix it with a directory, \`.scira\`, \`runs\`, or \`latest\`; those paths are rejected.
+  - Source code / project files (src/…, package.json, …): relative to the project root.
 - Never write source code under .scira. Never put harness files at the project root.
 
 CODING TOOLS:
@@ -88,7 +89,7 @@ When the task involves code:
 - Run tests/builds with bash; use bash action=background for servers then action=output to check logs
 - Match existing code style and patterns` : "";
 
-  return `You are Scira AI CLI, made by Zaid Mukaddam, an autonomous research ${workspacePath ? "and coding " : ""}agent.${workspacePath ? " Source code lives at the project root; harness artifacts live under .scira/runs/." : " You operate inside a single run directory on the user's machine."}
+  return `You are Scira AI CLI, made by Zaid Mukaddam, an autonomous research ${workspacePath ? "and coding " : ""}agent.${workspacePath ? ` Source code lives at the project root; run artifacts live in this run's directory${runPath ? ` (${runPath})` : ""}.` : ` You operate inside a single run directory${runPath ? ` (${runPath})` : ""} on the user's machine.`}
 
 Your goal:
 ${goal}
@@ -168,7 +169,7 @@ export async function createResearchAgent(
       provider: config.llmProvider,
       config,
       workspacePath: options.workspacePath ?? process.cwd(),
-      instructions: instructions(goal, config, options)
+      instructions: instructions(goal, config, options, runPath)
     });
   }
   const bridge = await createMcpBridge(config);
@@ -181,19 +182,19 @@ export async function createResearchAgent(
   const bgContext = options.backgroundTasks ? await options.backgroundTasks.formatContextForAgent() : "";
   const agent = new ToolLoopAgent({
     model: getLanguageModel(config),
-    instructions: instructions(goal, config, options) + bgContext + devtoolsInstructionsBlock(bridge.toolNames),
+    instructions: instructions(goal, config, options, runPath) + bgContext + devtoolsInstructionsBlock(bridge.toolNames),
     tools,
     stopWhen: isLoopFinished()
   });
   return { agent, close: bridge.close };
 }
 
-function oneShotInstructions(goal: string, hasDevtools: boolean, options: AgentOptions = {}): string {
+function oneShotInstructions(goal: string, hasDevtools: boolean, options: AgentOptions = {}, runPath?: string): string {
   const { workspacePath } = options;
   const planMode = resolvePlanMode(options);
   const codingHint = workspacePath ? `
 
-Project root: ${workspacePath}. readFile/writeFile/editFile route code paths to the project root; harness files (plan.md, notes.md, …) stay under .scira/runs/.
+Project root: ${workspacePath}. readFile/writeFile/editFile route code paths to the project root; run artifacts (plan.md, notes.md, …) go in this run's directory${runPath ? ` (${runPath})` : ""} — pass the bare filename or that absolute path.
 - listWorkspaceDir, grepWorkspace, bash (with background tasks), todo
 Use them for code questions, debugging, and implementation tasks.` : "";
   const now = new Date();
@@ -251,7 +252,7 @@ export async function createOneShotAgent(
       provider: config.llmProvider,
       config,
       workspacePath: options.workspacePath ?? process.cwd(),
-      instructions: oneShotInstructions(goal, false, options)
+      instructions: oneShotInstructions(goal, false, options, runPath)
     });
   }
   const bridge = await createMcpBridge(config);
@@ -271,7 +272,7 @@ export async function createOneShotAgent(
   const bgContext = options.backgroundTasks ? await options.backgroundTasks.formatContextForAgent() : "";
   const agent = new ToolLoopAgent({
     model: getLanguageModel(config),
-    instructions: oneShotInstructions(goal, bridge.toolNames.length > 0, options) + bgContext + devtoolsInstructionsBlock(bridge.toolNames),
+    instructions: oneShotInstructions(goal, bridge.toolNames.length > 0, options, runPath) + bgContext + devtoolsInstructionsBlock(bridge.toolNames),
     tools,
     stopWhen: isLoopFinished()
   });
