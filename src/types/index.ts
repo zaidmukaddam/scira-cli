@@ -128,3 +128,32 @@ export type RunState = {
   updatedAt: number; // ms epoch of last activity (convo.json / report mtime)
   isFull: boolean; // true once the full research harness produced sources/claims
 };
+
+export const RoutineSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  runId: z.string(),
+  goal: z.string(),
+  projectRoot: z.string(),
+  frequency: z.enum(["day", "weekday", "week"]),
+  atHHMM: z.string().regex(/^\d{2}:\d{2}$/u),
+  createdAt: z.string(),
+  lastRunAt: z.string().nullable().default(null),
+  enabled: z.boolean().default(true),
+});
+
+export type Routine = z.infer<typeof RoutineSchema>;
+
+export const RoutineResultSchema = z.object({
+  id: z.string(),
+  routineId: z.string(),
+  routineName: z.string(),
+  runPath: z.string(),
+  goal: z.string(),
+  diffSummary: z.string(),
+  ranAt: z.string(),
+  status: z.enum(["ok", "error"]),
+  errorMessage: z.string().optional(),
+});
+
+export type RoutineResult = z.infer<typeof RoutineResultSchema>;
