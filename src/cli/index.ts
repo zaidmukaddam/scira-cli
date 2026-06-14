@@ -38,6 +38,7 @@ import { saveGlobalMcpConfig } from "../config/load-config.js";
 import { runOAuthFlow } from "../tools/mcp-oauth.js";
 import { initCommand } from "./commands/init.js";
 import { checkForUpdate, formatUpdateNotice } from "../utils/update-check.js";
+import { checkRoutineNotices, formatRoutineNotice } from "../utils/routine-notice.js";
 
 // Once per invocation (throttled to a real npm check at most daily): surface an
 // available update. The TUI shows it as an in-app notice; CLI commands print it.
@@ -47,6 +48,8 @@ const argv = process.argv.slice(2);
 const wantsUpdateCheck = !argv.some((a) => ["-v", "--version", "-h", "--help"].includes(a));
 const update = wantsUpdateCheck ? await checkForUpdate(pkgVersion) : null;
 const updateNotice = update ? formatUpdateNotice(update) : undefined;
+const routineResults = wantsUpdateCheck ? await checkRoutineNotices() : [];
+const routineNotice = routineResults.length > 0 ? formatRoutineNotice(routineResults) : undefined;
 // The TUI renders the notice in-app, so the finally banner would double it up.
 let noticeShownInApp = false;
 
@@ -304,6 +307,58 @@ prog
   });
 
 prog
+  .command("routine save <run-id>", "save a completed run as a repeatable scheduled routine")
+  .option("--name", "human-readable label for this routine")
+  .option("--at", "time of day to run in HH:MM 24h format", "09:00")
+  .option("--every", "frequency: day | weekday | week", "day")
+  .action(async (runId: string, opts: { name?: string; at: string; every: string }) => {
+    const { routineSave } = await import("./commands/routine.js");
+    await routineSave(runId, opts);
+  });
+
+prog
+  .command("routine list", "list all saved routines")
+  .action(async () => {
+    const { routineList } = await import("./commands/routine.js");
+    await routineList();
+  });
+
+prog
+  .command("routine remove <id>", "remove a routine by id or name")
+  .action(async (id: string) => {
+    const { routineRemove } = await import("./commands/routine.js");
+    await routineRemove(id);
+  });
+
+prog
+  .command("routine run <id>", "manually trigger a routine now")
+  .action(async (id: string) => {
+    const { routineRun } = await import("./commands/routine.js");
+    await routineRun(id);
+  });
+
+prog
+  .command("daemon start", "start the background routine scheduler")
+  .action(async () => {
+    const { daemonStart } = await import("./commands/daemon-cmd.js");
+    await daemonStart();
+  });
+
+prog
+  .command("daemon stop", "stop the background routine scheduler")
+  .action(async () => {
+    const { daemonStop } = await import("./commands/daemon-cmd.js");
+    await daemonStop();
+  });
+
+prog
+  .command("daemon status", "show routine scheduler status and upcoming schedules")
+  .action(async () => {
+    const { daemonStatus } = await import("./commands/daemon-cmd.js");
+    await daemonStatus();
+  });
+
+prog
   .command("watch <goal>", "monitor a topic by running research on a schedule and diffing reports")
   .option("--daily", "run once per day (default)")
   .option("--hourly", "run once per hour")
@@ -531,4 +586,5 @@ try {
   // Reminder after a CLI command finishes. Skipped when the TUI already
   // rendered the notice in-app, so we don't show it twice.
   if (updateNotice && !noticeShownInApp) process.stderr.write(`\n\x1b[2m${updateNotice}\x1b[0m\n`);
+  if (routineNotice) process.stderr.write(`\n\x1b[36m${routineNotice}\x1b[0m\n`);
 }
